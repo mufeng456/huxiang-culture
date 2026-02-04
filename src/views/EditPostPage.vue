@@ -31,6 +31,20 @@
           ></textarea>
         </div>
         
+        <div class="form-group">
+          <label for="postCategory">分类</label>
+          <select id="postCategory" v-model="post.category">
+            <option value="文化讨论">文化讨论</option>
+            <option value="历史探索">历史探索</option>
+            <option value="艺术欣赏">艺术欣赏</option>
+            <option value="民俗风情">民俗风情</option>
+            <option value="饮食文化">饮食文化</option>
+            <option value="建筑风格">建筑风格</option>
+            <option value="文学作品">文学作品</option>
+            <option value="传统工艺">传统工艺</option>
+          </select>
+        </div>
+        
         <div class="form-actions">
           <button type="button" @click="cancel" class="btn-cancel">取消</button>
           <button type="submit" class="btn-submit" :disabled="isSubmitting">
@@ -58,7 +72,8 @@ export default {
     
     const post = ref({
       title: '',
-      content: ''
+      content: '',
+      category: ''  // 添加分类字段
     })
     
     const postId = parseInt(route.params.id)
@@ -69,23 +84,110 @@ export default {
     // 获取帖子详情
     const fetchPostDetail = async () => {
       try {
-        const response = await request(`/posts/${postId}`, 'GET')
+        console.log('正在获取帖子详情，帖子ID:', postId);
         
-        if (response.success) {
-          post.value = {
-            title: response.post.title,
-            content: response.post.content
+        // 首先检查认证状态
+        const token = localStorage.getItem('access_token');
+        if (!token) {
+          error.value = '请先登录后再编辑帖子';
+          console.error('访问令牌不存在');
+          setTimeout(() => {
+            router.push('/login');
+          }, 2000);
+          return;
+        }
+        
+        // 验证令牌是否有效
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          const now = Math.floor(Date.now() / 1000);
+          if (payload.exp < now) {
+            error.value = '登录已过期，请重新登录';
+            console.error('令牌已过期');
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user');
+            setTimeout(() => {
+              router.push('/login');
+            }, 2000);
+            return;
           }
-        } else {
-          throw new Error(response.message || '获取帖子详情失败')
+          console.log('JWT令牌有效，剩余时间:', payload.exp - now, '秒');
+        } catch (e) {
+          console.error('令牌解析错误:', e);
+          error.value = '登录凭证异常，请重新登录';
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          setTimeout(() => {
+            router.push('/login');
+          }, 2000);
+          return;
+        }
+        
+        console.log('开始请求帖子详情，URL:', `/posts/${postId}`);
+        // 在发送请求前添加额外的日志
+        console.log('准备发送API请求到:', `/posts/${postId}`);
+        console.log('使用的方法:', 'GET');
+        console.log('当前token:', token.substring(0, 20) + '...');
+        
+        // 尝试直接调用API而不依赖封装的request函数，用于调试
+        try {
+          const response = await request(`/posts/${postId}`, 'GET');
+          console.log('帖子详情响应:', response);
+          
+          if (response && typeof response === 'object') {
+            if (response.success) {
+              post.value = {
+                title: response.post.title,
+                content: response.post.content,
+                category: response.post.category || '文化讨论'  // 添加分类字段
+              }
+              console.log('帖子详情已加载');
+            } else {
+              // 检查错误类型并给出相应提示
+              if (response.code === 404) {
+                error.value = '帖子不存在或已被删除';
+              } else if (response.code === 403) {
+                error.value = '您没有权限编辑此帖子';
+              } else if (response.code === 401) {
+                error.value = '登录已过期，请重新登录';
+                // 清除本地认证信息并跳转到登录页面
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('user');
+                setTimeout(() => {
+                  router.push('/login');
+                }, 2000);
+              } else {
+                // 检查是否是错误响应
+                if (response.error) {
+                  error.value = response.error || '获取帖子详情失败';
+                } else {
+                  throw new Error(response.message || '获取帖子详情失败')
+                }
+              }
+            }
+          } else {
+            // 如果响应不是期望的对象格式，则认为是错误
+            error.value = '服务器响应格式错误';
+          }
+        } catch (innerErr) {
+          console.error('在API调用过程中捕获到错误:', innerErr);
+          throw innerErr; // 重新抛出错误，以便外层处理
         }
       } catch (err) {
-        console.error('获取帖子详情错误:', err)
-        error.value = err.message || '获取帖子详情失败'
-        // 如果获取失败，返回社区页面
-        setTimeout(() => {
-          router.push('/community')
-        }, 2000)
+        console.error('获取帖子详情错误:', err);
+        console.error('错误详细信息:', err.message, err.stack);
+        
+        // 检查是否是网络错误
+        if (err.message.includes('网络连接失败') || err.message.includes('fetch')) {
+          error.value = '网络连接失败，请检查网络连接或后端服务是否正常运行';
+        } else if (err.message.includes('登录已过期')) {
+          error.value = '登录已过期，请重新登录';
+        } else {
+          error.value = err.message || '获取帖子详情失败';
+        }
+        
+        // 不自动跳转，让用户可以看到错误信息
+        // 如果需要，可以提供手动跳转选项
       }
     }
     
@@ -101,10 +203,19 @@ export default {
           return
         }
         
+        console.log('开始更新帖子，帖子ID:', postId);
+        console.log('请求数据:', {
+          title: post.value.title,
+          content: post.value.content.substring(0, 50) + '...' // 只记录内容开头部分
+        });
+        
         const response = await request(`/posts/${postId}`, 'PUT', {
           title: post.value.title,
-          content: post.value.content
+          content: post.value.content,
+          category: post.value.category  // 添加分类字段
         })
+        
+        console.log('更新帖子响应:', response);
         
         if (response.success) {
           successMessage.value = '帖子更新成功！'
@@ -114,11 +225,40 @@ export default {
             router.push(`/post-detail/${postId}`)
           }, 2000)
         } else {
-          error.value = response.message || '更新帖子失败'
+          // 增强错误处理
+          if (response.code === 400) {
+            error.value = '标题或内容不能为空，且标题不能超过200字符，内容不能超过5000字符';
+          } else if (response.code === 401) {
+            error.value = '登录已过期，请重新登录';
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('user');
+            setTimeout(() => {
+              router.push('/login');
+            }, 2000);
+          } else if (response.code === 403) {
+            error.value = '您没有权限更新此帖子';
+          } else if (response.code === 404) {
+            error.value = '要更新的帖子不存在';
+          } else {
+            error.value = response.message || '更新帖子失败'
+          }
         }
       } catch (err) {
         console.error('更新帖子错误:', err)
-        error.value = err.message || '更新帖子失败，请稍后重试'
+        console.error('错误堆栈:', err.stack);
+        
+        if (err.message.includes('网络连接失败') || err.message.includes('fetch')) {
+          error.value = '网络连接失败，请检查网络连接或后端服务是否正常运行';
+        } else if (err.message.includes('登录已过期')) {
+          error.value = '登录已过期，请重新登录';
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('user');
+          setTimeout(() => {
+            router.push('/login');
+          }, 2000);
+        } else {
+          error.value = err.message || '更新帖子失败，请稍后重试'
+        }
       } finally {
         isSubmitting.value = false
       }

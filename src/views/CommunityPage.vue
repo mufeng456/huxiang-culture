@@ -40,6 +40,14 @@
         >
           <i class="fas fa-comment-dots"></i> 意见反馈
         </button>
+        <button 
+          class="nav-tab" 
+          :class="{ active: activeTab === 'my-posts' }" 
+          @click="switchTab('my-posts')"
+          v-if="isLoggedIn"
+        >
+          <i class="fas fa-user"></i> 我的帖子
+        </button>
       </div>
 
       <!-- 论坛内容 -->
@@ -95,6 +103,16 @@
                 <h3 class="post-title">{{ post.title }}</h3>
                 <p class="post-excerpt">{{ truncateText(post.content, 150) }}</p>
               </div>
+              
+              <!-- 添加操作按钮，仅对帖子作者显示 -->
+              <div class="post-actions" v-if="isPostOwner(post)">
+                <button class="action-btn edit-btn" @click.stop="editPost(post.id)">
+                  <i class="fas fa-edit"></i> 编辑
+                </button>
+                <button class="action-btn delete-btn" @click.stop="confirmDeletePost(post.id, post.title)">
+                  <i class="fas fa-trash"></i> 删除
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -125,6 +143,96 @@
           >
             下一页
           </button>
+        </div>
+      </div>
+
+      <!-- 我的帖子内容 -->
+      <div v-if="activeTab === 'my-posts'" class="my-posts-content">
+        <!-- 发帖按钮 -->
+        <div class="forum-actions">
+          <button class="create-post-btn" @click="createNewPost">
+            <i class="fas fa-plus-circle"></i> 发布新主题
+          </button>
+        </div>
+
+        <!-- 加载状态 -->
+        <div v-if="myPostsLoading" class="loading-posts">
+          <p>正在加载我的帖子...</p>
+        </div>
+
+        <!-- 我的帖子列表 -->
+        <div v-else class="posts-list">
+          <div 
+            v-for="post in myPosts" 
+            :key="post.id" 
+            class="post-item"
+          >
+            <div class="post-card">
+              <div class="post-header">
+                <div class="post-author">
+                  <img :src="post.author?.avatar || '/api/placeholder/40/40'" :alt="post.author?.username" class="author-avatar" loading="lazy" />
+                  <div class="author-info">
+                    <span class="author-name">{{ post.author?.username }}</span>
+                    <span class="post-date">{{ formatDate(post.created_at) }}</span>
+                  </div>
+                </div>
+                <div class="post-stats">
+                  <span class="stat-item"><i class="far fa-eye"></i> {{ post.views || 0 }}</span>
+                  <span class="stat-item"><i class="far fa-comment"></i> {{ post.comments_count || 0 }}</span>
+                  <span class="stat-item"><i class="far fa-thumbs-up"></i> {{ post.likes_count || 0 }}</span>
+                </div>
+              </div>
+              <div class="post-body">
+                <div class="post-tags">
+                  <span class="post-category">{{ post.category || '文化讨论' }}</span>
+                </div>
+                <h3 class="post-title">{{ post.title }}</h3>
+                <p class="post-excerpt">{{ truncateText(post.content, 150) }}</p>
+              </div>
+              <!-- 我的帖子操作按钮 -->
+              <div class="post-actions">
+                <button class="action-btn edit-btn" @click.stop="editMyPost(post.id)">
+                  <i class="fas fa-edit"></i> 编辑
+                </button>
+                <button class="action-btn delete-btn" @click.stop="deleteMyPost(post.id, post.title)">
+                  <i class="fas fa-trash"></i> 删除
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 分页 -->
+        <div v-if="!myPostsLoading && myTotalPages > 1" class="pagination">
+          <button 
+            @click="goToMyPage(myCurrentPage - 1)" 
+            :disabled="myCurrentPage === 1"
+            class="pagination-btn"
+          >
+            上一页
+          </button>
+          
+          <span 
+            v-for="page in getMyPageNumbers()" 
+            :key="page"
+            @click="goToMyPage(page)"
+            :class="['page-number', { active: page === myCurrentPage }]"
+          >
+            {{ page }}
+          </span>
+          
+          <button 
+            @click="goToMyPage(myCurrentPage + 1)" 
+            :disabled="myCurrentPage === myTotalPages"
+            class="pagination-btn"
+          >
+            下一页
+          </button>
+        </div>
+        
+        <!-- 空状态 -->
+        <div v-if="!myPostsLoading && myPosts.length === 0" class="empty-state">
+          <p>您还没有发布任何帖子，<a href="#" @click.prevent="createNewPost">立即发布第一篇帖子</a></p>
         </div>
       </div>
 
@@ -267,15 +375,55 @@ export default {
     const totalPosts = ref(0)
     const loading = ref(false)
     
+    // 我的帖子相关状态
+    const myPosts = ref([])
+    const myCurrentPage = ref(1)
+    const myTotalPages = ref(1)
+    const myPostsLoading = ref(false)
+    
     // 论坛帖子数据
-    const forumPosts = ref([])
+    const forumPosts = ref([]) // 论坛帖子列表
+
+    // 获取我的帖子数据
+    const fetchMyPosts = async () => {
+      try {
+        myPostsLoading.value = true
+        
+        // 获取当前用户信息
+        const storedUser = localStorage.getItem('user')
+        if (!storedUser) {
+          throw new Error('请先登录')
+        }
+        
+        const user = JSON.parse(storedUser)
+        const response = await request(`/posts?page=${myCurrentPage.value}&per_page=10`, 'GET')
+        
+        if (response && response.success) {
+          // 过滤出当前用户发布的帖子
+          const userPosts = (response.posts || []).filter(post => post.author.id === user.id)
+          myPosts.value = userPosts
+          myTotalPages.value = response.pages || 1
+        } else {
+          console.error('API响应错误:', response);
+          throw new Error(response.message || response.error || '获取我的帖子失败')
+        }
+      } catch (error) {
+        console.error('获取我的帖子失败:', error)
+        if (props.showAlert) {
+          props.showAlert(error.message || '获取我的帖子失败', 'error')
+        }
+        myPosts.value = []
+      } finally {
+        myPostsLoading.value = false
+      }
+    }
     
     // 获取帖子数据
     const fetchForumPosts = async () => {
       try {
         loading.value = true
         
-        const response = await request(`/posts?page=${currentPage.value}&per_page=10`, 'GET')
+        const response = await request(`/posts?page=${currentPage.value}&per_page=5`, 'GET')
         
         console.log('API响应数据:', response); // 添加调试信息
         
@@ -300,11 +448,127 @@ export default {
       }
     }
     
+    // 删除我的帖子
+    const deleteMyPost = async (postId, postTitle) => {
+      if (!confirm(`确定要删除帖子《${postTitle}》吗？此操作不可撤销。`)) {
+        return
+      }
+      
+      try {
+        const response = await request(`/posts/${postId}`, 'DELETE')
+        
+        if (response.success) {
+          // 从本地数组中移除该帖子
+          myPosts.value = myPosts.value.filter(post => post.id !== postId)
+          if (props.showAlert) {
+            props.showAlert('帖子删除成功', 'success')
+          }
+        } else {
+          throw new Error(response.message || '删除帖子失败')
+        }
+      } catch (error) {
+        console.error('删除帖子失败:', error)
+        if (props.showAlert) {
+          props.showAlert(error.message || '删除帖子失败', 'error')
+        }
+      }
+    }
+    
+    // 编辑我的帖子
+    const editMyPost = (postId) => {
+      router.push(`/edit-post/${postId}`)
+    }
+    
+    // 跳转到我的帖子指定页
+    const goToMyPage = (page) => {
+      if (page >= 1 && page <= myTotalPages.value && page !== myCurrentPage.value) {
+        myCurrentPage.value = page
+        fetchMyPosts()
+      }
+    }
+    
+    // 获取我的帖子页码
+    const getMyPageNumbers = () => {
+      const delta = 2
+      const range = []
+      const start = Math.max(1, myCurrentPage.value - delta)
+      const end = Math.min(myTotalPages.value, myCurrentPage.value + delta)
+      
+      if (start > 1) {
+        range.push(1)
+        if (start > 2) range.push('...')
+      }
+      
+      for (let i = start; i <= end; i++) {
+        range.push(i)
+      }
+      
+      if (end < myTotalPages.value) {
+        if (end < myTotalPages.value - 1) range.push('...')
+        range.push(myTotalPages.value)
+      }
+      
+      return range
+    }
+    
     // 计算当前页显示的帖子
     const displayedPosts = computed(() => {
       console.log(`计算显示的帖子数: ${forumPosts.value.length}`); // 添加调试信息
       return forumPosts.value
     })
+    
+    // 获取当前用户是否已登录
+    const isLoggedIn = computed(() => {
+      const storedUser = localStorage.getItem('user')
+      return !!storedUser
+    })
+    
+    // 检查当前用户是否为帖子作者
+    const isPostOwner = (post) => {
+      if (!isLoggedIn.value || !post.author) return false
+      
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+      return post.author.id === currentUser.id
+    }
+    
+    // 编辑帖子
+    const editPost = (postId) => {
+      // 再次确认用户有权限编辑此帖子
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        alert('请先登录后再编辑帖子');
+        router.push('/login');
+        return;
+      }
+      
+      router.push(`/edit-post/${postId}`);
+    }
+    
+    // 确认删除帖子
+    const confirmDeletePost = async (postId, postTitle) => {
+      if (!confirm(`确定要删除帖子《${postTitle}》吗？此操作不可撤销。`)) {
+        return
+      }
+      
+      try {
+        const response = await request(`/posts/${postId}`, 'DELETE')
+        
+        if (response.success) {
+          // 从列表中移除该帖子
+          forumPosts.value = forumPosts.value.filter(post => post.id !== postId)
+          if (props.showAlert) {
+            props.showAlert('帖子删除成功', 'success')
+          }
+        } else {
+          throw new Error(response.message || '删除帖子失败')
+        }
+      } catch (error) {
+        console.error('删除帖子失败:', error)
+        if (props.showAlert) {
+          props.showAlert(error.message || '删除帖子失败', 'error')
+        }
+      }
+    }
     
     // 分页相关计算
     const getPageNumbers = () => {
@@ -349,6 +613,10 @@ export default {
         // 总是获取最新数据
         currentPage.value = 1; // 重置到第一页
         fetchForumPosts()
+      } else if (tab === 'my-posts' && isLoggedIn.value) {
+        // 获取当前用户自己的帖子
+        myCurrentPage.value = 1; // 重置到第一页
+        fetchMyPosts()
       } else if (tab === 'activities') {
         fetchActivities()
       }
@@ -593,12 +861,25 @@ export default {
       recentFeedback,
       totalPages,
       loading,
+      myPosts,
+      myCurrentPage,
+      myTotalPages,
+      myPostsLoading,
+      isLoggedIn,
+      isPostOwner,
       switchTab,
       createNewPost,
       viewPostDetails,
       sortForumPosts,
       goToPage,
       getPageNumbers,
+      deleteMyPost,
+      editMyPost,
+      goToMyPage,
+      getMyPageNumbers,
+      fetchMyPosts,
+      editPost,
+      confirmDeletePost,
       joinActivity,
       submitContribution,
       handleImageUpload,
@@ -670,7 +951,8 @@ export default {
 }
 
 /* 论坛样式 */
-.forum-content {
+.forum-content,
+.my-posts-content {
   background: #f8f9fa;
   padding: 1.5rem;
   border-radius: 12px;
@@ -706,18 +988,6 @@ export default {
   border: 1px solid #ddd;
   border-radius: 4px;
   background-color: white;
-}
-
-.forum-post {
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin-bottom: 1rem;
-  transition: box-shadow 0.3s;
-}
-
-.forum-post:hover {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .posts-list {
@@ -802,57 +1072,38 @@ export default {
 }
 
 .post-category {
-  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
-  color: white;
+  background-color: #e3f2fd;
+  color: #1976d2;
   padding: 0.25rem 0.75rem;
-  border-radius: 15px;
+  border-radius: 20px;
   font-size: 0.8rem;
   font-weight: 500;
 }
 
 .post-title {
-  margin: 0 0 0.75rem 0;
   font-size: 1.25rem;
+  font-weight: 600;
   color: #333;
-  line-height: 1.4;
+  margin: 0.5rem 0 0.75rem;
 }
 
 .post-excerpt {
-  margin: 0;
   color: #666;
   line-height: 1.6;
-  font-size: 0.95rem;
 }
 
-.post-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 1rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid #eee;
-}
-
-.view-post-btn {
-  background-color: var(--secondary-color);
-  color: white;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.view-post-btn:hover {
-  background-color: #0056b3;
+.loading-posts {
+  text-align: center;
+  padding: 2rem;
+  color: #666;
 }
 
 .pagination {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 0.5rem;
   margin-top: 2rem;
-  flex-wrap: wrap;
 }
 
 .pagination-btn {
@@ -865,8 +1116,7 @@ export default {
 }
 
 .pagination-btn:hover:not(:disabled) {
-  background-color: var(--primary-color);
-  color: white;
+  background: #f0f0f0;
 }
 
 .pagination-btn:disabled {
@@ -874,35 +1124,87 @@ export default {
   cursor: not-allowed;
 }
 
-.current-page {
-  background-color: var(--primary-color);
+.page-number {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid #ddd;
+  background: white;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.page-number:hover {
+  background: #f0f0f0;
+}
+
+.page-number.active {
+  background: var(--primary-color);
   color: white;
-  border: 1px solid var(--primary-color);
+  border-color: var(--primary-color);
 }
 
-.pagination-btn:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: #999;
 }
 
-/* 活动样式 */
+.post-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #eee;
+}
+
+.action-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.3s;
+}
+
+.edit-btn {
+  background-color: #ffc107;
+  color: #212529;
+}
+
+.edit-btn:hover {
+  background-color: #e0a800;
+}
+
+.delete-btn {
+  background-color: #dc3545;
+  color: white;
+}
+
+.delete-btn:hover {
+  background-color: #bd2130;
+}
+
+/* 活动和贡献部分的样式 */
 .activities-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 1.5rem;
+  margin-top: 1.5rem;
 }
 
 .activity-card {
-  border: 1px solid #ddd;
-  border-radius: 8px;
+  background: white;
+  border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  transition: transform 0.3s, box-shadow 0.3s;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  transition: transform 0.3s;
 }
 
 .activity-card:hover {
   transform: translateY(-5px);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15);
 }
 
 .activity-image {
@@ -915,18 +1217,13 @@ export default {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transition: transform 0.3s;
-}
-
-.activity-card:hover .activity-image img {
-  transform: scale(1.05);
 }
 
 .activity-date {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  background-color: var(--primary-color);
+  top: 1rem;
+  right: 1rem;
+  background: var(--primary-color);
   color: white;
   padding: 0.5rem 1rem;
   border-radius: 4px;
@@ -938,49 +1235,45 @@ export default {
 }
 
 .activity-title {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.3rem;
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem;
   color: #333;
 }
 
 .activity-location {
+  color: #666;
+  margin: 0.5rem 0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  color: #666;
-  margin-bottom: 1rem;
-  font-size: 0.9rem;
 }
 
 .activity-description {
   color: #666;
-  line-height: 1.5;
-  margin-bottom: 1.5rem;
+  line-height: 1.6;
+  margin: 1rem 0;
 }
 
 .activity-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-top: 1rem;
 }
 
 .activity-btn {
-  background-color: var(--primary-color);
+  background: var(--primary-color);
   color: white;
   border: none;
-  padding: 0.75rem 1.5rem;
-  cursor: pointer;
+  padding: 0.5rem 1.5rem;
   border-radius: 4px;
+  cursor: pointer;
   transition: background-color 0.3s;
 }
 
 .activity-btn:hover {
-  background-color: var(--primary-dark);
-}
-
-.activity-btn:disabled {
-  background-color: #ccc;
-  cursor: not-allowed;
+  background: var(--primary-dark);
 }
 
 .participants-count {
@@ -988,61 +1281,16 @@ export default {
   font-size: 0.9rem;
 }
 
-/* 内容贡献样式 */
-.contributions-content {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 2rem;
-}
-
-.contribution-form h2 {
-  margin-top: 0;
-  margin-bottom: 1.5rem;
-  color: #333;
-}
-
-.form-group {
-  margin-bottom: 1.5rem;
-}
-
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: bold;
-  color: #333;
-}
-
-.form-group input,
-.form-group select,
-.form-group textarea {
-  width: 100%;
-  padding: 0.75rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 1rem;
-}
-
-.form-group textarea {
-  resize: vertical;
-}
-
-.submit-btn {
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: background-color 0.3s;
-}
-
-.submit-btn:hover {
-  background-color: var(--primary-dark);
+.contribution-form,
+.feedback-form {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-bottom: 2rem;
 }
 
 .contribution-guidelines {
-  background-color: #f8f9fa;
+  background: white;
   padding: 1.5rem;
   border-radius: 8px;
 }
@@ -1054,40 +1302,67 @@ export default {
 }
 
 .contribution-guidelines ul {
-  margin: 0;
   padding-left: 1.5rem;
   color: #666;
 }
 
-.contribution-guidelines li {
-  margin-bottom: 0.5rem;
-  line-height: 1.5;
-}
-
-/* 反馈样式 */
-.feedback-content {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 2rem;
-}
-
-.feedback-form h2 {
-  margin-top: 0;
+.form-group {
   margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
   color: #333;
 }
 
-.recent-feedback h3 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  color: #333;
+.form-group input,
+.form-group textarea,
+.form-group select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color 0.3s;
+}
+
+.form-group input:focus,
+.form-group textarea:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.submit-btn {
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  padding: 0.75rem 2rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.submit-btn:hover {
+  background: var(--primary-dark);
+}
+
+.recent-feedback {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 8px;
+  margin-top: 1.5rem;
 }
 
 .feedback-item {
-  background-color: #f8f9fa;
-  padding: 1rem;
-  border-radius: 8px;
-  margin-bottom: 1rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid #eee;
+}
+
+.feedback-item:last-child {
+  border-bottom: none;
 }
 
 .feedback-header {
@@ -1097,34 +1372,28 @@ export default {
 }
 
 .feedback-type {
-  background-color: var(--secondary-color);
-  color: white;
+  background: #e3f2fd;
+  color: #1976d2;
   padding: 0.25rem 0.75rem;
-  border-radius: 15px;
-  font-size: 0.85rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
 }
 
 .feedback-date {
-  font-size: 0.85rem;
   color: #999;
+  font-size: 0.8rem;
 }
 
 .feedback-question {
-  margin: 0 0 0.5rem 0;
+  margin: 0 0 0.5rem;
   color: #666;
-  line-height: 1.5;
 }
 
 .feedback-reply {
-  background-color: white;
   padding: 0.75rem;
+  background: #f8f9fa;
   border-radius: 4px;
   border-left: 3px solid var(--primary-color);
-}
-
-.feedback-reply p {
-  margin: 0;
-  color: #333;
 }
 
 /* 响应式设计 */

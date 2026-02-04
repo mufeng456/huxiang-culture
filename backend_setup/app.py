@@ -285,7 +285,13 @@ def create_app(config_name=None):
         user.is_admin = False  # 默认非管理员
         
         db.session.add(user)
-        db.session.commit()
+        db.session.flush()  # 获取用户ID，但暂不提交事务
+        
+        # 生成默认头像URL，基于用户名首字母和用户ID
+        initial = username[0].upper() if username else 'U'
+        user.avatar = f'https://picsum.photos/seed/{initial}{user.id}/100'
+        
+        db.session.commit()  # 提交所有更改
         
         app.logger.info(f'新用户注册成功: {username}')
         
@@ -584,20 +590,28 @@ def create_app(config_name=None):
             # 首先尝试查询帖子
             post = db.session.query(Post).filter(Post.id == post_id).first()
             if not post:
+                app.logger.warning(f'请求的帖子不存在: {post_id}')
                 return jsonify({'error': '帖子不存在', 'code': 404}), 404
                 
             current_user_id = get_jwt_identity()
             current_user_obj = User.query.get(current_user_id)
             if not current_user_obj:
+                app.logger.warning(f'认证用户不存在: {current_user_id}')
                 return jsonify({'error': '用户不存在', 'code': 404}), 404
             
             if request.method == 'GET':
                 app.logger.info(f'用户 {current_user_id} 访问了帖子: {post_id}')
                 
+                # 检查帖子是否有有效的author_id
+                post_author_id = getattr(post, 'author_id', None)
+                if post_author_id is None:
+                    app.logger.error(f'帖子 {post_id} 缺少author_id字段')
+                    return jsonify({'error': '帖子信息不完整', 'code': 500}), 500
+                
                 # 增加浏览量（排除作者自己和管理员）
-                if post.author_id != current_user_id and not current_user_obj.is_admin:
-                    post.views = post.views + 1
+                if post_author_id != current_user_id and not current_user_obj.is_admin:
                     try:
+                        post.views = post.views + 1
                         db.session.commit()
                         app.logger.info(f'帖子 {post_id} 浏览量增加到: {post.views}')
                     except Exception as e:
@@ -607,21 +621,37 @@ def create_app(config_name=None):
                 return jsonify({'post': post.to_dict()})
             
             # 检查权限：只能修改/删除自己创建的帖子，或管理员可以修改任意帖子
-            if post.author_id != current_user_id and not current_user_obj.is_admin:
+            post_author_id = getattr(post, 'author_id', None)
+            if post_author_id is None:
+                app.logger.error(f'帖子 {post_id} 缺少author_id字段，无法验证权限')
+                return jsonify({'error': '帖子信息不完整', 'code': 500}), 500
+                
+            if post_author_id != current_user_id and not current_user_obj.is_admin:
                 app.logger.warning(f'用户 {current_user_id} 尝试访问无权限的帖子: {post_id}')
                 return jsonify({'error': '无权访问此资源', 'code': 403}), 403
             
             elif request.method == 'PUT':
-                data = request.get_json()
-                
-                if 'title' in data:
-                    post.title = data['title']
-                if 'content' in data:
-                    post.content = data['content']
-                if 'category' in data:
-                    post.category = data['category']
-                
                 try:
+                    data = request.get_json()
+                    
+                    if not data:
+                        return jsonify({'error': '无效的请求数据', 'code': 400}), 400
+                    
+                    if 'title' in data:
+                        if not data['title'] or len(data['title']) > 200:
+                            return jsonify({'error': '标题不能为空且不能超过200个字符', 'code': 400}), 400
+                        post.title = data['title']
+                        
+                    if 'content' in data:
+                        if not data['content'] or len(data['content']) > 5000:
+                            return jsonify({'error': '内容不能为空且不能超过5000个字符', 'code': 400}), 400
+                        post.content = data['content']
+                        
+                    if 'category' in data:
+                        if not data['category']:
+                            return jsonify({'error': '分类不能为空', 'code': 400}), 400
+                        post.category = data['category']
+                    
                     db.session.commit()
                     app.logger.info(f'用户 {current_user_id} 更新了帖子: {post_id}')
                     
@@ -633,7 +663,7 @@ def create_app(config_name=None):
                 except Exception as e:
                     db.session.rollback()
                     app.logger.error(f'更新帖子时发生错误: {str(e)}')
-                    return jsonify({'error': '更新帖子失败', 'message': str(e)}), 500
+                    return jsonify({'error': '更新帖子失败', 'message': str(e), 'code': 500}), 500
             
             elif request.method == 'DELETE':
                 try:
@@ -648,11 +678,14 @@ def create_app(config_name=None):
                 except Exception as e:
                     db.session.rollback()
                     app.logger.error(f'删除帖子时发生错误: {str(e)}')
-                    return jsonify({'error': '删除帖子失败', 'message': str(e)}), 500
+                    return jsonify({'error': '删除帖子失败', 'message': str(e), 'code': 500}), 500
                     
+        except ValueError as e:
+            app.logger.error(f'参数转换错误: {str(e)}')
+            return jsonify({'error': '参数错误', 'message': str(e), 'code': 400}), 400
         except Exception as e:
-            app.logger.error(f'处理帖子详情请求时发生错误: {str(e)}')
-            return jsonify({'error': '服务器内部错误', 'message': str(e)}), 500
+            app.logger.error(f'处理帖子详情请求时发生未知错误: {str(e)}', exc_info=True)
+            return jsonify({'error': '服务器内部错误', 'message': '服务器发生了未预期的错误', 'code': 500}), 500
 
 
     # 点赞帖子API

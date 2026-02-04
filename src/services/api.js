@@ -65,6 +65,9 @@ export const request = async (endpoint, method = 'GET', data = null) => {
 
     const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
     
+    console.log(`API请求 ${method} ${API_BASE_URL}${endpoint} 响应状态:`, response.status);
+    console.log(`认证令牌:`, token ? '存在' : '不存在');
+    
     // 检查响应是否为空
     if (response.status === 204) {
       // No Content 状态码

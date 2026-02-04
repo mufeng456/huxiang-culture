@@ -46,7 +46,7 @@
 <script>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { mockLogin } from '../services/mockAuthService.js'
+import { request } from '../services/api.js'
 
 export default {
   name: 'LoginView',
@@ -58,31 +58,40 @@ export default {
 
     // 处理登录
     const handleLogin = async () => {
-      error.value = ''
-      
-      // 简单验证
-      if (!usernameOrEmail.value || !password.value) {
-        error.value = '请填写所有必填字段'
-        return
-      }
-      
       try {
-        // 使用模拟登录
-        const response = await mockLogin(usernameOrEmail.value, password.value)
+        error.value = ''
+        
+        // 简单验证
+        if (!usernameOrEmail.value || !password.value) {
+          error.value = '请填写所有必填字段'
+          return
+        }
+        
+        // 使用真实API进行登录
+        const response = await request('/login', 'POST', {
+          username: usernameOrEmail.value,
+          password: password.value
+        })
         
         if (response.success) {
-          // 存储用户信息到localStorage
+          // 登录成功，保存用户信息到localStorage
           localStorage.setItem('user', JSON.stringify(response.user))
+          localStorage.setItem('access_token', response.access_token)
           
           // 触发登录成功事件，通知App.vue更新状态
           window.dispatchEvent(new Event('login-success'))
           
-          // 登录成功后跳转到首页
-          router.push('/')
+          // 根据用户角色重定向
+          if (response.user.is_admin) {
+            router.push('/admin')
+          } else {
+            router.push('/profile')
+          }
         } else {
-          error.value = '用户名/邮箱或密码错误'
+          error.value = response.message || '登录失败'
         }
       } catch (err) {
+        console.error('登录错误:', err)
         error.value = err.message || '登录失败，请稍后重试'
       }
     }

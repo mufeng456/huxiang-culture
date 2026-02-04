@@ -14,6 +14,10 @@ import RegisterView from '../views/RegisterView.vue'
 import ProfilePage from '../views/ProfilePage.vue'
 import AdminPage from '../views/AdminPage.vue'
 import PostDetailPage from '../views/PostDetailPage.vue'
+import CreatePostPage from '../views/CreatePostPage.vue'
+import CreateResourcePage from '../views/CreateResourcePage.vue'
+import EditPostPage from '../views/EditPostPage.vue'
+import EditResourcePage from '../views/EditResourcePage.vue'
 
 const routes = [
   {
@@ -49,6 +53,44 @@ const routes = [
       title: '互动社区 - 湖湘文化数字化平台',
       requiresAuth: true
     }
+  },
+  {
+    path: '/create-post',
+    name: 'create-post',
+    component: CreatePostPage,
+    meta: {
+      title: '发布新主题 - 湖湘文化数字化平台',
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/edit-post/:id',
+    name: 'edit-post',
+    component: EditPostPage,
+    meta: {
+      title: '编辑帖子 - 湖湘文化数字化平台',
+      requiresAuth: true
+    },
+    props: true
+  },
+  {
+    path: '/create-resource',
+    name: 'create-resource',
+    component: CreateResourcePage,
+    meta: {
+      title: '创建文化资源 - 湖湘文化数字化平台',
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/edit-resource/:id',
+    name: 'edit-resource',
+    component: EditResourcePage,
+    meta: {
+      title: '编辑文化资源 - 湖湘文化数字化平台',
+      requiresAuth: true
+    },
+    props: true
   },
   {
     path: '/digital-showcase',

@@ -6,11 +6,23 @@
         <p>管理您的账户信息</p>
       </div>
       
-      <div class="profile-content">
+      <!-- 加载状态 -->
+      <div v-if="loading" class="loading-state">
+        <p>正在加载用户信息...</p>
+      </div>
+      
+      <!-- 错误状态 -->
+      <div v-else-if="error" class="error-state">
+        <p>{{ error }}</p>
+        <button @click="fetchUserProfile" class="retry-button">重试</button>
+      </div>
+      
+      <!-- 用户信息内容 -->
+      <div v-else class="profile-content">
         <!-- 头像上传区域 -->
         <div class="avatar-section">
           <div class="avatar-upload">
-            <div class="avatar-preview" :style="{ backgroundImage: `url(${avatarPreview})` }">
+            <div class="avatar-preview" :style="{ backgroundImage: `url(${user?.avatar || '/api/placeholder/120/120'})` }">
               <input type="file" ref="avatarInput" class="avatar-input" accept="image/*" @change="handleAvatarChange">
             </div>
             <label for="avatar-upload-btn" class="avatar-upload-label">
@@ -29,7 +41,7 @@
             <input
               type="text"
               id="username"
-              v-model="userInfo.username"
+              v-model="editForm.username"
               placeholder="请输入您的昵称"
               required
             />
@@ -40,7 +52,7 @@
             <input
               type="email"
               id="email"
-              v-model="userInfo.email"
+              :value="user?.email || '加载中...'"
               placeholder="请输入您的邮箱"
               required
               readonly
@@ -49,7 +61,7 @@
           </div>
           
           <div v-if="error" class="error-message">{{ error }}</div>
-          <div v-if="success" class="success-message">{{ success }}</div>
+          <div v-if="uploadMessage" class="success-message">{{ uploadMessage }}</div>
           
           <button type="submit" class="save-button">保存修改</button>
         </form>
@@ -59,133 +71,148 @@
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { updateUserProfile } from '../services/mockAuthService.js'
+import { ref, onMounted } from 'vue'
+import { request } from '../services/api.js'
 
 export default {
   name: 'ProfilePage',
   setup() {
-    const router = useRouter()
-    const avatarInput = ref(null)
-    const userInfo = ref({ username: '', email: '', id: '' })
-    const avatarPreview = ref('')
+    const user = ref(null)
+    const loading = ref(true)
     const error = ref('')
-    const success = ref('')
-
-    // 初始化用户信息
-    const initUserInfo = () => {
-      const storedUser = localStorage.getItem('user')
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser)
-        userInfo.value = {
-          username: parsedUser.username,
-          email: parsedUser.email,
-          id: parsedUser.id
-        }
-        // 设置头像预览
-        avatarPreview.value = getUserAvatar(parsedUser.username)
-      } else {
-        // 未登录，重定向到登录页
-        router.push('/login')
-      }
-    }
-
-    // 获取用户头像（根据用户名生成）
-    const getUserAvatar = (username) => {
-      // 使用Gravatar或其他头像服务的API，这里使用简单的字母头像生成
-      const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#F9DB6D', '#6A0572', '#AB83A1']
-      const colorIndex = username.charCodeAt(0) % colors.length
-      const avatarColor = colors[colorIndex]
-      const initial = username.charAt(0).toUpperCase()
-      // 生成简单的SVG头像
-      const svg = `data:image/svg+xml;base64,${btoa(
-        `<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120">
-          <rect width="120" height="120" fill="${avatarColor}"/>
-          <text x="60" y="75" font-family="Arial, sans-serif" font-size="48" font-weight="bold" text-anchor="middle" fill="white">${initial}</text>
-        </svg>`
-      )}`
-      return svg
-    }
-
-    // 触发头像上传
-    const triggerAvatarUpload = () => {
-      avatarInput.value?.click()
-    }
-
-    // 处理头像更改
-    const handleAvatarChange = (event) => {
-      const file = event.target.files[0]
-      if (file) {
-        // 检查文件大小
-        if (file.size > 5 * 1024 * 1024) { // 5MB
-          error.value = '文件大小不能超过5MB'
-          return
+    const isEditing = ref(false)
+    const editForm = ref({
+      username: '',
+      avatar: ''
+    })
+    const uploadMessage = ref('')
+    
+    // 获取当前用户信息
+    const fetchUserProfile = async () => {
+      try {
+        loading.value = true
+        error.value = ''
+        
+        // 从localStorage获取用户ID
+        const storedUser = localStorage.getItem('user')
+        if (!storedUser) {
+          throw new Error('请先登录')
         }
         
-        // 使用FileReader预览图片
-        const reader = new FileReader()
-        reader.onload = (e) => {
-          avatarPreview.value = e.target.result
-          success.value = '头像已更新（保存后生效）'
-          setTimeout(() => { success.value = '' }, 3000)
-        }
-        reader.readAsDataURL(file)
+        const userData = JSON.parse(storedUser)
+        const response = await request(`/profile/${userData.id}`, 'GET')
+        
+        user.value = response.user
+        editForm.value.username = response.user.username
+        editForm.value.avatar = response.user.avatar || ''
+      } catch (err) {
+        console.error('获取用户信息错误:', err)
+        error.value = err.message || '获取用户信息失败'
+      } finally {
+        loading.value = false
       }
     }
-
-    // 处理更新个人资料
+    
+    // 更新用户资料
     const handleUpdateProfile = async () => {
-      error.value = ''
-      success.value = ''
-      
-      // 简单验证
-      if (!userInfo.value.username) {
-        error.value = '昵称不能为空'
-        return
-      }
-      
       try {
-        // 使用模拟更新服务
-        const response = await updateUserProfile(userInfo.value.id, {
-          username: userInfo.value.username,
-          // 这里可以添加头像数据，如果支持的话
-          avatar: avatarPreview.value
+        const storedUser = localStorage.getItem('user')
+        if (!storedUser) {
+          throw new Error('请先登录')
+        }
+        
+        const userData = JSON.parse(storedUser)
+        
+        const response = await request(`/profile/${userData.id}`, 'PUT', {
+          username: editForm.value.username
         })
         
         if (response.success) {
-          // 更新localStorage中的用户信息
-          const updatedUser = {
-            ...JSON.parse(localStorage.getItem('user')),
-            username: userInfo.value.username
-          }
-          localStorage.setItem('user', JSON.stringify(updatedUser))
+          // 更新本地存储的用户信息
+          user.value = response.user
+          localStorage.setItem('user', JSON.stringify(response.user))
           
-          // 显示成功消息
-          success.value = '个人资料更新成功'
-          setTimeout(() => { success.value = '' }, 3000)
+          uploadMessage.value = '资料更新成功！'
+          
+          setTimeout(() => {
+            uploadMessage.value = ''
+          }, 3000)
         } else {
-          error.value = '更新失败，请稍后重试'
+          throw new Error(response.message || '更新失败')
         }
       } catch (err) {
-        error.value = err.message || '更新失败，请稍后重试'
+        console.error('更新用户资料错误:', err)
+        uploadMessage.value = err.message || '更新资料失败'
       }
     }
-
-    // 组件挂载时初始化用户信息
+    
+    // 触发头像上传
+    const triggerAvatarUpload = () => {
+      document.querySelector('.avatar-input').click()
+    }
+    
+    // 处理头像选择
+    const handleAvatarChange = async (event) => {
+      const file = event.target.files[0]
+      if (!file) return
+      
+      // 验证文件类型
+      if (!file.type.startsWith('image/')) {
+        uploadMessage.value = '请选择有效的图片文件'
+        return
+      }
+      
+      // 这里应该上传头像到服务器，但现在我们先简单地将其转换为base64
+      const reader = new FileReader()
+      reader.onload = async (e) => {
+        try {
+          // 保存头像到用户资料
+          const storedUser = localStorage.getItem('user')
+          if (!storedUser) {
+            throw new Error('请先登录')
+          }
+          
+          const userData = JSON.parse(storedUser)
+          
+          const response = await request(`/profile/${userData.id}`, 'PUT', {
+            username: editForm.value.username,
+            avatar: e.target.result
+          })
+          
+          if (response.success) {
+            user.value = response.user
+            localStorage.setItem('user', JSON.stringify(response.user))
+            uploadMessage.value = '头像更新成功！'
+            
+            setTimeout(() => {
+              uploadMessage.value = ''
+            }, 3000)
+          } else {
+            throw new Error(response.message || '更新头像失败')
+          }
+        } catch (err) {
+          console.error('更新头像错误:', err)
+          uploadMessage.value = err.message || '更新头像失败'
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+    
     onMounted(() => {
-      initUserInfo()
+      fetchUserProfile()
     })
-
+    
     return {
-      userInfo,
-      avatarInput,
-      avatarPreview,
+      user,
+      loading,
       error,
-      success,
+      isEditing,
+      editForm,
+      uploadMessage,
+      fetchUserProfile,
+      handleUpdateProfile,
       triggerAvatarUpload,
-      handleAvatarChange,
-      handleUpdateProfile
+      handleAvatarChange
     }
   }
 }

@@ -98,6 +98,17 @@ export default {
       }
       window.addEventListener('login-success', handleLoginSuccess)
       
+      // 监听登出事件（例如认证失败时）
+      const handleLogoutEvent = () => {
+        localStorage.removeItem('user')
+        localStorage.removeItem('access_token')
+        isLoggedIn.value = false
+        user.value = null
+        router.push('/')
+        showAlert('登录已过期，请重新登录', 'info')
+      }
+      window.addEventListener('logout', handleLogoutEvent)
+      
       // 尝试检查用户登录状态
       checkUserLoginStatus()
       
@@ -105,6 +116,7 @@ export default {
       return () => {
         window.removeEventListener('navigate', handleNavigate)
         window.removeEventListener('login-success', handleLoginSuccess)
+        window.removeEventListener('logout', handleLogoutEvent)
       }
     })
 

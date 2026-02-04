@@ -52,13 +52,14 @@
         </div>
         
         <div v-if="error" class="error-message">{{ error }}</div>
-        <div v-if="success" class="success-message">{{ success }}</div>
         
-        <button type="submit" class="register-button">注册</button>
+        <button type="submit" class="register-button" :disabled="isSubmitting">
+          {{ isSubmitting ? '注册中...' : '注册' }}
+        </button>
         
         <div class="login-link">
           <span>已有账号？</span>
-          <router-link to="/login">返回登录</router-link>
+          <router-link to="/login">立即登录</router-link>
         </div>
       </form>
     </div>
@@ -68,25 +69,22 @@
 <script>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { mockRegister } from '../services/mockAuthService.js'
+import { request } from '../services/api.js'
 
 export default {
   name: 'RegisterView',
   setup() {
     const router = useRouter()
+    
     const name = ref('')
     const email = ref('')
     const password = ref('')
     const confirmPassword = ref('')
     const error = ref('')
-    const success = ref('')
-
-    // 处理注册
+    const isSubmitting = ref(false)
+    
     const handleRegister = async () => {
-      error.value = ''
-      success.value = ''
-      
-      // 简单验证
+      // 验证输入
       if (!name.value || !email.value || !password.value || !confirmPassword.value) {
         error.value = '请填写所有必填字段'
         return
@@ -103,28 +101,41 @@ export default {
       }
       
       try {
-        // 使用模拟注册
-        const response = await mockRegister(name.value, email.value, password.value)
+        error.value = ''
+        isSubmitting.value = true
         
-        // 显示成功消息
-        success.value = '注册成功！即将跳转到登录页面...'
+        // 使用真实API进行注册
+        const response = await request('/register', 'POST', {
+          username: name.value,
+          email: email.value,
+          password: password.value
+        })
         
-        // 2秒后跳转到登录页面
-        setTimeout(() => {
-          router.push('/login')
-        }, 2000)
+        if (response.success) {
+          // 注册成功，保存用户信息到localStorage
+          localStorage.setItem('user', JSON.stringify(response.user))
+          localStorage.setItem('access_token', response.access_token)
+          
+          // 跳转到个人资料页面
+          router.push('/profile')
+        } else {
+          error.value = response.message || '注册失败'
+        }
       } catch (err) {
+        console.error('注册错误:', err)
         error.value = err.message || '注册失败，请稍后重试'
+      } finally {
+        isSubmitting.value = false
       }
     }
-
+    
     return {
       name,
       email,
       password,
       confirmPassword,
       error,
-      success,
+      isSubmitting,
       handleRegister
     }
   }

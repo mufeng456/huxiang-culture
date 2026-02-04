@@ -17,16 +17,18 @@
           <button class="search-btn"><i class="fas fa-search"></i></button>
         </div>
         
-        <div class="resource-categories">
-          <button 
-            v-for="category in categories" 
-            :key="category.id"
-            :class="['category-btn', { active: currentCategory === category.id }]"
-            @click="filterByCategory(category.id)"
-          >
-            {{ category.name }}
-          </button>
+        <div class="category-filter">
+          <select v-model="currentCategory" class="category-select">
+            <option value="all">全部分类</option>
+            <option v-for="category in categories" :key="category.id" :value="category.id">
+              {{ category.name }}
+            </option>
+          </select>
         </div>
+        
+        <button @click="createResource" class="create-resource-btn">
+          <i class="fas fa-plus-circle"></i> 创建资源
+        </button>
       </div>
 
       <!-- 资源网格 -->
@@ -325,6 +327,11 @@ export default {
       router.push({ name: 'resource-detail', params: { id: resourceId } })
     }
     
+    // 方法：创建新资源
+    const createResource = () => {
+      router.push({ name: 'create-resource' })
+    }
+    
     return {
       searchQuery,
       currentCategory,
@@ -339,7 +346,8 @@ export default {
       searchResources,
       goToPage,
       resetFilters,
-      viewResourceDetails
+      viewResourceDetails,
+      createResource
     }
   }
 }
@@ -373,13 +381,60 @@ export default {
 }
 
 .search-filter-section {
+  display: flex;
+  gap: 1rem;
   margin: 1rem 0;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .search-box {
+  position: relative;
+  flex: 1;
+  min-width: 250px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.75rem 2.5rem 0.75rem 1rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 1rem;
+}
+
+.search-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+}
+.search-filter-section {
   display: flex;
-  margin: 0 auto 1rem auto;
-  max-width: 600px;
+  gap: 1rem;
+  margin: 1rem 0;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search-box {
+  position: relative;
+  flex: 1;
+  min-width: 250px;
+}
+
+.search-btn {
+  position: absolute;
+  right: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
 }
 
 .search-box input {
@@ -404,31 +459,29 @@ export default {
   background-color: var(--primary-dark);
 }
 
-.resource-categories {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  justify-content: center;
-}
-
-.category-btn {
-  background-color: white;
+.category-select {
+  padding: 0.75rem;
   border: 1px solid #ddd;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  border-radius: 20px;
-  transition: all 0.3s;
-  font-size: 0.9rem;
+  border-radius: 4px;
+  font-size: 1rem;
+  min-width: 150px;
 }
 
-.category-btn:hover {
-  background-color: #f8f9fa;
-}
-
-.category-btn.active {
-  background-color: var(--primary-color);
+.create-resource-btn {
+  padding: 0.75rem 1.5rem;
+  background: var(--primary-color);
   color: white;
-  border-color: var(--primary-color);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+}
+
+.create-resource-btn:hover {
+  background: var(--primary-dark);
 }
 
 .resources-grid {

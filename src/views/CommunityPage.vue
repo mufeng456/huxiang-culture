@@ -50,52 +50,79 @@
             <i class="fas fa-plus-circle"></i> 发布新主题
           </button>
           
-          <div class="forum-filters">
-            <select v-model="forumSortBy" @change="sortForumPosts">
+          <!-- 排序选项 -->
+          <div class="sort-options">
+            <select v-model="forumSortBy" @change="sortForumPosts" class="sort-select">
               <option value="latest">最新发布</option>
-              <option value="popular">热门讨论</option>
+              <option value="popular">最受欢迎</option>
               <option value="comments">评论最多</option>
             </select>
           </div>
         </div>
 
-        <!-- 论坛帖子列表 -->
-        <div class="forum-posts">
-          <div v-for="post in forumPosts" :key="post.id" class="forum-post">
-            <div class="post-header">
-              <div class="post-author">
-                <img :src="post.authorAvatar" alt="Author avatar" class="author-avatar" loading="lazy" />
-                <div class="author-info">
-                  <span class="author-name">{{ post.authorName }}</span>
-                  <span class="post-date">{{ formatDate(post.createdAt) }}</span>
+        <!-- 加载状态 -->
+        <div v-if="loading" class="loading-posts">
+          <p>正在加载帖子...</p>
+        </div>
+
+        <!-- 帖子列表 -->
+        <div v-else class="posts-list">
+          <div 
+            v-for="post in displayedPosts" 
+            :key="post.id" 
+            class="post-item"
+            @click="viewPostDetails(post.id)"
+          >
+            <div class="post-card">
+              <div class="post-header">
+                <div class="post-author">
+                  <img :src="post.author?.avatar || '/api/placeholder/40/40'" :alt="post.author?.username" class="author-avatar" loading="lazy" />
+                  <div class="author-info">
+                    <span class="author-name">{{ post.author?.username }}</span>
+                    <span class="post-date">{{ formatDate(post.created_at) }}</span>
+                  </div>
+                </div>
+                <div class="post-stats">
+                  <span class="stat-item"><i class="far fa-eye"></i> {{ post.views || 0 }}</span>
+                  <span class="stat-item"><i class="far fa-comment"></i> {{ post.comments_count || 0 }}</span>
+                  <span class="stat-item"><i class="far fa-thumbs-up"></i> {{ post.likes_count || 0 }}</span>
                 </div>
               </div>
-              <div class="post-stats">
-                <span class="stat-item"><i class="far fa-eye"></i> {{ post.views }} 浏览</span>
-                <span class="stat-item"><i class="far fa-comment"></i> {{ post.comments }} 评论</span>
-                <span class="stat-item"><i class="far fa-thumbs-up"></i> {{ post.likes }} 点赞</span>
+              <div class="post-body">
+                <div class="post-tags">
+                  <span class="post-category">{{ post.category || '文化讨论' }}</span>
+                </div>
+                <h3 class="post-title">{{ post.title }}</h3>
+                <p class="post-excerpt">{{ truncateText(post.content, 150) }}</p>
               </div>
-            </div>
-            <div class="post-content">
-              <h3 class="post-title">{{ post.title }}</h3>
-              <p class="post-excerpt">{{ post.excerpt }}</p>
-            </div>
-            <div class="post-footer">
-              <span class="post-category">{{ post.category }}</span>
-              <button class="view-post-btn" @click="viewPostDetails(post.id)">查看详情</button>
             </div>
           </div>
         </div>
 
         <!-- 分页 -->
-        <div class="pagination">
-          <button class="pagination-btn" :disabled="currentPage === 1" @click="goToPage(currentPage - 1)">
+        <div v-if="!loading && totalPages > 1" class="pagination">
+          <button 
+            @click="goToPage(currentPage - 1)" 
+            :disabled="currentPage === 1"
+            class="pagination-btn"
+          >
             上一页
           </button>
-          <button class="pagination-btn" v-for="page in forumPages" :key="page" :class="{ active: currentPage === page }" @click="goToPage(page)">
+          
+          <span 
+            v-for="page in getPageNumbers()" 
+            :key="page"
+            @click="goToPage(page)"
+            :class="['page-number', { active: page === currentPage }]"
+          >
             {{ page }}
-          </button>
-          <button class="pagination-btn" :disabled="currentPage === forumPages" @click="goToPage(currentPage + 1)">
+          </span>
+          
+          <button 
+            @click="goToPage(currentPage + 1)" 
+            :disabled="currentPage === totalPages"
+            class="pagination-btn"
+          >
             下一页
           </button>
         </div>
@@ -216,8 +243,9 @@
 </template>
 
 <script>
-import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { request } from '../services/api.js'
 
 export default {
   name: 'CommunityPage',
@@ -234,140 +262,127 @@ export default {
     const activeTab = ref('forum')
     const currentPage = ref(1)
     const forumSortBy = ref('latest')
-    const forumPages = ref(3)
+    const forumPages = ref(1)
+    const totalPages = ref(1)
+    const totalPosts = ref(0)
+    const loading = ref(false)
     
     // 论坛帖子数据
-    const forumPosts = ref([
-      {
-        id: '1',
-        title: '探讨湖湘文化的现代传承与发展',
-        excerpt: '湖湘文化作为中国传统文化的重要组成部分，在现代社会如何更好地传承和发展是一个值得思考的问题...',
-        authorName: '文化探索者',
-        authorAvatar: 'https://picsum.photos/seed/user1/100/100',
-        createdAt: '2023-06-15',
-        views: 528,
-        comments: 42,
-        likes: 89,
-        category: '文化讨论'
-      },
-      {
-        id: '2',
-        title: '关于岳阳楼的历史变迁研究',
-        excerpt: '岳阳楼作为江南三大名楼之一，经历了多次损毁和重建，其历史变迁反映了湖湘地区的发展历程...',
-        authorName: '历史学者',
-        authorAvatar: 'https://picsum.photos/seed/user2/100/100',
-        createdAt: '2023-06-10',
-        views: 412,
-        comments: 35,
-        likes: 76,
-        category: '历史研究'
-      },
-      {
-        id: '3',
-        title: '湘绣艺术的保护与创新',
-        excerpt: '湘绣作为中国四大名绣之一，面临着传统工艺传承的困境，如何在保护传统的同时进行创新是一个重要课题...',
-        authorName: '艺术爱好者',
-        authorAvatar: 'https://picsum.photos/seed/user3/100/100',
-        createdAt: '2023-06-08',
-        views: 387,
-        comments: 29,
-        likes: 65,
-        category: '传统艺术'
-      },
-      {
-        id: '4',
-        title: '湖南美食文化的地域特色',
-        excerpt: '湖南菜以其独特的辣味风格著称，但不同地区的湘菜也有着各自的特色，值得我们深入了解...',
-        authorName: '美食家',
-        authorAvatar: 'https://picsum.photos/seed/user4/100/100',
-        createdAt: '2023-06-05',
-        views: 642,
-        comments: 57,
-        likes: 124,
-        category: '饮食文化'
-      }
-    ])
+    const forumPosts = ref([])
     
-    // 文化活动数据
-    const activities = ref([
-      {
-        id: '1',
-        title: '湖湘文化艺术节',
-        description: '一场集音乐、舞蹈、戏剧、美术于一体的综合性文化艺术盛宴，展示湖湘文化的独特魅力。',
-        imageUrl: 'https://picsum.photos/seed/artfestival/400/300',
-        startDate: '2023-07-15',
-        endDate: '2023-07-20',
-        location: '长沙市湖南大剧院',
-        participants: 356,
-        isJoined: false
-      },
-      {
-        id: '2',
-        title: '岳麓书院文化讲座系列',
-        description: '邀请知名学者解读湖湘文化经典，探讨传统文化在当代的价值和意义。',
-        imageUrl: 'https://picsum.photos/seed/lecture/400/300',
-        startDate: '2023-07-08',
-        endDate: '2023-07-08',
-        location: '岳麓书院明伦堂',
-        participants: 128,
-        isJoined: true
-      },
-      {
-        id: '3',
-        title: '湘绣技艺体验工作坊',
-        description: '由资深湘绣艺人亲自指导，让参与者亲身体验湘绣的制作过程，感受传统工艺的魅力。',
-        imageUrl: 'https://picsum.photos/seed/embroidery/400/300',
-        startDate: '2023-07-22',
-        endDate: '2023-07-22',
-        location: '湖南省博物馆',
-        participants: 85,
-        isJoined: false
+    // 获取帖子数据
+    const fetchForumPosts = async () => {
+      try {
+        loading.value = true
+        
+        const response = await request(`/posts?page=${currentPage.value}&per_page=10`, 'GET')
+        
+        console.log('API响应数据:', response); // 添加调试信息
+        
+        if (response && response.success) {
+          forumPosts.value = response.posts || []
+          totalPages.value = response.pages || 1
+          totalPosts.value = response.total || 0
+          
+          console.log(`获取到 ${forumPosts.value.length} 个帖子`); // 添加调试信息
+        } else {
+          console.error('API响应错误:', response);
+          throw new Error(response.message || response.error || '获取帖子失败')
+        }
+      } catch (error) {
+        console.error('获取帖子失败:', error)
+        if (props.showAlert) {
+          props.showAlert(error.message || '获取帖子失败', 'error')
+        }
+        forumPosts.value = []
+      } finally {
+        loading.value = false
       }
-    ])
+    }
     
-    // 内容贡献表单数据
-    const contribution = ref({
-      title: '',
-      category: '',
-      description: '',
-      image: null
+    // 计算当前页显示的帖子
+    const displayedPosts = computed(() => {
+      console.log(`计算显示的帖子数: ${forumPosts.value.length}`); // 添加调试信息
+      return forumPosts.value
     })
     
-    // 意见反馈表单数据
-    const feedback = ref({
-      type: '',
-      content: '',
-      contact: ''
-    })
-    
-    // 近期反馈数据
-    const recentFeedback = ref([
-      {
-        id: '1',
-        type: '建议',
-        question: '希望平台能够增加更多湖湘地方方言的学习资源',
-        reply: '感谢您的建议！我们正在策划湖湘方言保护与传承项目，敬请期待。',
-        date: '2023-06-12'
-      },
-      {
-        id: '2',
-        type: '问题反馈',
-        question: '移动端浏览时图片加载较慢，希望能够优化',
-        reply: '您好，我们已经注意到这个问题，技术团队正在进行图片加载优化，预计下周完成。',
-        date: '2023-06-08'
+    // 分页相关计算
+    const getPageNumbers = () => {
+      const delta = 2
+      const range = []
+      const start = Math.max(1, currentPage.value - delta)
+      const end = Math.min(totalPages.value, currentPage.value + delta)
+      
+      if (start > 1) {
+        range.push(1)
+        if (start > 2) range.push('...')
       }
-    ])
+      
+      for (let i = start; i <= end; i++) {
+        range.push(i)
+      }
+      
+      if (end < totalPages.value) {
+        if (end < totalPages.value - 1) range.push('...')
+        range.push(totalPages.value)
+      }
+      
+      return range
+    }
     
-    // 方法：切换标签页
+    // 跳转到指定页
+    const goToPage = (page) => {
+      if (page === '...') return
+      
+      if (page >= 1 && page <= totalPages.value && page !== currentPage.value) {
+        currentPage.value = page
+        fetchForumPosts() // 获取新页面的数据
+      }
+    }
+    
+    // 切换标签
     const switchTab = (tab) => {
       activeTab.value = tab
+      
+      // 根据当前标签加载相应内容
+      if (tab === 'forum') {
+        // 总是获取最新数据
+        currentPage.value = 1; // 重置到第一页
+        fetchForumPosts()
+      } else if (tab === 'activities') {
+        fetchActivities()
+      }
     }
+    
+    // 监听帖子创建事件
+    const handlePostCreated = (event) => {
+      console.log('收到帖子创建事件:', event.detail); // 添加调试信息
+      // 如果当前在论坛标签页，刷新帖子列表
+      if (activeTab.value === 'forum') {
+        console.log('正在刷新帖子列表...');
+        fetchForumPosts();
+      }
+    }
+    
+    // 组件挂载后初始化
+    onMounted(() => {
+      console.log('社区页面挂载');
+      // 默认显示论坛
+      switchTab('forum')
+      
+      // 监听帖子创建事件
+      window.addEventListener('postCreated', handlePostCreated)
+    })
+    
+    // 组件卸载前清理事件监听器
+    onUnmounted(() => {
+      console.log('移除社区页面事件监听器');
+      window.removeEventListener('postCreated', handlePostCreated)
+    })
     
     // 方法：创建新帖子
     const createNewPost = () => {
-      if (props.showAlert) {
-        props.showAlert('发帖功能即将开放，敬请期待！', 'info')
-      }
+      router.push('/create-post')
     }
     
     // 方法：查看帖子详情
@@ -379,21 +394,123 @@ export default {
     const sortForumPosts = () => {
       // 根据选择的排序方式对帖子进行排序
       if (forumSortBy.value === 'latest') {
-        forumPosts.value.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+        forumPosts.value.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
       } else if (forumSortBy.value === 'popular') {
-        forumPosts.value.sort((a, b) => b.views - a.views)
+        forumPosts.value.sort((a, b) => (b.views || 0) - (a.views || 0))
       } else if (forumSortBy.value === 'comments') {
-        forumPosts.value.sort((a, b) => b.comments - a.comments)
+        forumPosts.value.sort((a, b) => (b.comments_count || 0) - (a.comments_count || 0))
       }
     }
     
-    // 方法：分页导航
-    const goToPage = (page) => {
-      if (page >= 1 && page <= forumPages.value) {
-        currentPage.value = page
+    // 方法：截断文本
+    const truncateText = (text, maxLength) => {
+      if (!text) return ''
+      return text.length > maxLength ? text.substring(0, maxLength) + '...' : text
+    }
+    
+    // 方法：格式化日期
+    const formatDate = (dateString) => {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      })
+    }
+
+    // 文化活动数据
+    const activities = ref([])
+    
+    // 获取文化活动数据
+    const fetchActivities = async () => {
+      try {
+        // 尝试从API获取真实活动数据
+        const response = await request('/activities', 'GET')
+        if (response.success) {
+          activities.value = response.activities || []
+        } else {
+          // 如果API没有活动数据或API调用失败，使用模拟数据作为后备
+          loadMockActivities()
+        }
+      } catch (error) {
+        console.warn('获取真实活动数据失败，加载模拟数据:', error)
+        // API调用失败时使用模拟数据
+        loadMockActivities()
       }
     }
     
+    // 加载模拟活动数据
+    const loadMockActivities = () => {
+      activities.value = [
+        {
+          id: '1',
+          title: '湖湘文化艺术节',
+          description: '一场集音乐、舞蹈、戏剧、美术于一体的综合性文化艺术盛宴，展示湖湘文化的独特魅力。',
+          imageUrl: 'https://picsum.photos/seed/artfestival/400/300',
+          startDate: '2023-07-15',
+          endDate: '2023-07-20',
+          location: '长沙市湖南大剧院',
+          participants: 356,
+          isJoined: false
+        },
+        {
+          id: '2',
+          title: '岳麓书院文化讲堂',
+          description: '邀请知名学者讲解湖湘文化的历史渊源和当代价值，欢迎广大文化爱好者参与。',
+          imageUrl: 'https://picsum.photos/seed/culturelecture/400/300',
+          startDate: '2023-07-22',
+          endDate: '2023-07-22',
+          location: '长沙市岳麓书院',
+          participants: 189,
+          isJoined: false
+        },
+        {
+          id: '3',
+          title: '湘绣技艺体验工作坊',
+          description: '由资深湘绣艺人亲自指导，让参与者亲身体验湘绣的制作过程，感受传统工艺的魅力。',
+          imageUrl: 'https://picsum.photos/seed/xiangxiu/400/300',
+          startDate: '2023-08-05',
+          endDate: '2023-08-05',
+          location: '湖南省博物馆',
+          participants: 120,
+          isJoined: false
+        }
+      ]
+    }
+
+    // 内容贡献数据
+    const contribution = ref({
+      title: '',
+      category: '',
+      description: '',
+      image: null
+    })
+
+    // 意见反馈数据
+    const feedback = ref({
+      type: '',
+      content: '',
+      contact: ''
+    })
+
+    // 近期反馈
+    const recentFeedback = ref([
+      {
+        id: '1',
+        type: '功能建议',
+        question: '能否增加一个收藏功能，方便用户保存感兴趣的文章？',
+        reply: '感谢您的建议！收藏功能已经在开发计划中，预计下个月上线。',
+        date: '2023-06-10'
+      },
+      {
+        id: '2',
+        type: '问题反馈',
+        question: '移动端浏览时图片加载较慢，希望能够优化',
+        reply: '您好，我们已经注意到这个问题，技术团队正在进行图片加载优化，预计下周完成。',
+        date: '2023-06-08'
+      }
+    ])
+
     // 方法：报名活动
     const joinActivity = (activityId) => {
       const activity = activities.value.find(a => a.id === activityId)
@@ -413,7 +530,7 @@ export default {
         }
       }
     }
-    
+
     // 方法：提交内容贡献
     const submitContribution = () => {
       if (props.showAlert) {
@@ -427,7 +544,7 @@ export default {
         image: null
       }
     }
-    
+
     // 方法：处理图片上传
     const handleImageUpload = (event) => {
       const file = event.target.files[0]
@@ -435,7 +552,7 @@ export default {
         contribution.value.image = file
       }
     }
-    
+
     // 方法：提交反馈
     const submitFeedback = () => {
       if (props.showAlert) {
@@ -448,17 +565,7 @@ export default {
         contact: ''
       }
     }
-    
-    // 方法：格式化日期
-    const formatDate = (dateString) => {
-      const date = new Date(dateString)
-      return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
-    }
-    
+
     // 方法：格式化活动日期
     const formatActivityDate = (dateString) => {
       const date = new Date(dateString)
@@ -466,28 +573,39 @@ export default {
       const day = date.getDate()
       return `${month}月${day}日`
     }
-    
+
+    // 初始化时加载帖子和活动
+    onMounted(() => {
+      fetchForumPosts()
+      fetchActivities()  // 添加这一行以获取活动数据
+    })
+
     return {
       activeTab,
       currentPage,
       forumSortBy,
       forumPages,
       forumPosts,
+      displayedPosts,
       activities,
       contribution,
       feedback,
       recentFeedback,
+      totalPages,
+      loading,
       switchTab,
       createNewPost,
       viewPostDetails,
       sortForumPosts,
       goToPage,
+      getPageNumbers,
       joinActivity,
       submitContribution,
       handleImageUpload,
       submitFeedback,
       formatDate,
-      formatActivityDate
+      formatActivityDate,
+      truncateText
     }
   }
 }
@@ -552,6 +670,13 @@ export default {
 }
 
 /* 论坛样式 */
+.forum-content {
+  background: #f8f9fa;
+  padding: 1.5rem;
+  border-radius: 12px;
+  min-height: 500px;
+}
+
 .forum-actions {
   display: flex;
   justify-content: space-between;
@@ -595,11 +720,38 @@ export default {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
+.posts-list {
+  margin-top: 1rem;
+}
+
+.post-item {
+  margin-bottom: 0;
+}
+
+.post-card {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  transition: all 0.3s ease;
+  cursor: pointer;
+  border: 1px solid #eee;
+}
+
+.post-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.1);
+  border-color: #4a90e2;
+}
+
 .post-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #eee;
 }
 
 .post-author {
@@ -623,50 +775,62 @@ export default {
 .author-name {
   font-weight: bold;
   color: #333;
+  font-size: 0.95rem;
 }
 
 .post-date {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   color: #999;
 }
 
 .post-stats {
   display: flex;
-  gap: 1rem;
+  gap: 1.25rem;
+  align-items: center;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.3rem;
   font-size: 0.85rem;
   color: #666;
 }
 
+.post-tags {
+  margin-bottom: 0.75rem;
+}
+
+.post-category {
+  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
 .post-title {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.3rem;
+  margin: 0 0 0.75rem 0;
+  font-size: 1.25rem;
   color: #333;
+  line-height: 1.4;
 }
 
 .post-excerpt {
-  margin: 0 0 1rem 0;
+  margin: 0;
   color: #666;
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 0.95rem;
 }
 
 .post-footer {
   display: flex;
   justify-content: space-between;
   align-items: center;
-}
-
-.post-category {
-  background-color: #f0f0f0;
-  padding: 0.25rem 0.75rem;
-  border-radius: 15px;
-  font-size: 0.85rem;
-  color: #666;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #eee;
 }
 
 .view-post-btn {
@@ -674,41 +838,46 @@ export default {
   color: white;
   border: none;
   padding: 0.5rem 1rem;
-  cursor: pointer;
   border-radius: 4px;
-  font-size: 0.9rem;
+  cursor: pointer;
   transition: background-color 0.3s;
 }
 
 .view-post-btn:hover {
-  background-color: var(--secondary-dark);
+  background-color: #0056b3;
 }
 
 .pagination {
   display: flex;
   justify-content: center;
-  align-items: center;
   gap: 0.5rem;
-  margin: 2rem 0;
+  margin-top: 2rem;
+  flex-wrap: wrap;
 }
 
 .pagination-btn {
-  background-color: white;
-  border: 1px solid #ddd;
   padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  background: white;
   cursor: pointer;
   border-radius: 4px;
   transition: all 0.3s;
 }
 
 .pagination-btn:hover:not(:disabled) {
-  background-color: #f8f9fa;
-}
-
-.pagination-btn.active {
   background-color: var(--primary-color);
   color: white;
-  border-color: var(--primary-color);
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.current-page {
+  background-color: var(--primary-color);
+  color: white;
+  border: 1px solid var(--primary-color);
 }
 
 .pagination-btn:disabled {
@@ -967,17 +1136,17 @@ export default {
 }
 
 @media (max-width: 768px) {
-  .page-header h1 {
-    font-size: 2rem;
+  .container {
+    padding: 0 0.5rem;
   }
   
   .community-nav {
     flex-direction: column;
+    gap: 0.5rem;
   }
   
   .nav-tab {
-    justify-content: flex-start;
-    padding: 1rem 1.5rem;
+    text-align: center;
   }
   
   .forum-actions {
@@ -986,18 +1155,27 @@ export default {
     align-items: stretch;
   }
   
-  .activities-grid {
-    grid-template-columns: 1fr;
+  .post-item {
+    padding: 1rem;
   }
   
   .post-header {
     flex-direction: column;
-    align-items: flex-start;
     gap: 1rem;
+    align-items: flex-start;
+  }
+  
+  .post-stats {
+    align-self: flex-end;
   }
   
   .pagination {
-    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+  
+  .pagination-btn {
+    padding: 0.25rem 0.75rem;
+    font-size: 0.9rem;
   }
 }
 </style>

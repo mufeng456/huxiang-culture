@@ -10,424 +10,339 @@
     <!-- 主要内容 -->
     <div class="container">
       <!-- 帖子详情 -->
-      <div class="post-detail">
+      <div class="post-detail" v-if="!loading && currentPost">
         <!-- 帖子头部 -->
         <div class="post-header">
           <div class="post-author">
-            <img :src="currentPost?.authorAvatar" alt="Author avatar" class="author-avatar" loading="lazy" />
+            <img :src="currentPost?.author?.avatar || '/api/placeholder/40/40'" alt="Author avatar" class="author-avatar" loading="lazy" />
             <div class="author-info">
-              <span class="author-name">{{ currentPost?.authorName }}</span>
-              <span class="post-date">{{ formatDate(currentPost?.createdAt) }}</span>
+              <span class="author-name">{{ currentPost?.author?.username }}</span>
+              <span class="post-date">{{ formatDate(currentPost?.created_at) }}</span>
             </div>
           </div>
           <div class="post-stats">
-            <span class="stat-item"><i class="far fa-eye"></i> {{ currentPost?.views }} 浏览</span>
-            <span class="stat-item"><i class="far fa-comment"></i> {{ currentPost?.comments }} 评论</span>
-            <span class="stat-item"><i class="far fa-thumbs-up"></i> {{ currentPost?.likes }} 点赞</span>
+            <span class="stat-item"><i class="far fa-eye"></i> {{ currentPost?.views || 0 }} 浏览</span>
+            <span class="stat-item"><i class="far fa-comment"></i> <i class="comment-count-loading" v-if="commentsLoading">加载中...</i><span class="comment-count" v-else>{{ commentCount }}</span></span>
+            <span class="stat-item"><i class="far fa-thumbs-up"></i> {{ currentPost?.likes_count || 0 }} 点赞</span>
           </div>
         </div>
         
         <!-- 帖子内容 -->
         <div class="post-content">
+          <div class="post-meta">
+            <span class="post-category">{{ currentPost?.category || '文化讨论' }}</span>
+          </div>
           <h1 class="post-title">{{ currentPost?.title }}</h1>
+          <div class="post-stats-detail">
+            <span class="stat-item"><i class="far fa-eye"></i> {{ currentPost?.views || 0 }} 浏览</span>
+            <span class="stat-item"><i class="far fa-comment"></i> <i class="comment-count-loading" v-if="commentsLoading">加载中...</i><span class="comment-count" v-else>{{ commentCount }}</span></span>
+            <button @click="toggleLike" class="like-btn" :class="{ liked: isLiked }">
+              <i class="far fa-thumbs-up" :class="{ 'fas': isLiked }"></i>
+              <span>{{ currentPost?.likes_count || 0 }} 点赞</span>
+            </button>
+          </div>
           <div class="post-body" v-html="formatPostContent(currentPost?.content)"></div>
-          <div class="post-tags">
-            <span class="post-category">{{ currentPost?.category }}</span>
+          <div class="post-actions" v-if="canEditDelete">
+            <button class="action-btn" @click="editPost">
+              <i class="far fa-edit"></i>
+              <span>编辑</span>
+            </button>
+            <button class="action-btn delete-btn" @click="deletePost">
+              <i class="far fa-trash-alt"></i>
+              <span>删除</span>
+            </button>
           </div>
         </div>
         
-        <!-- 帖子操作 -->
-        <div class="post-actions">
-          <button class="action-btn" @click="toggleLike">
-            <i :class="['far', liked ? 'fa-thumbs-up' : 'fa-thumbs-up', liked ? 'liked' : '']"></i>
-            <span>{{ liked ? '已点赞' : '点赞' }}</span>
-          </button>
-          <button class="action-btn">
-            <i class="far fa-share-square"></i>
-            <span>分享</span>
-          </button>
-          <button class="action-btn" v-if="isUserAuthor">
-            <i class="far fa-edit"></i>
-            <span>编辑</span>
-          </button>
-        </div>
+        <!-- 评论区 -->
+        <CommentsSection :post-id="postId" />
       </div>
       
-      <!-- 相关推荐 -->
-      <div class="related-posts">
-        <h3>相关推荐</h3>
-        <div class="related-posts-list">
-          <div v-for="post in relatedPosts" :key="post.id" class="related-post-item" @click="goToPostDetail(post.id)">
-            <h4 class="related-post-title">{{ post.title }}</h4>
-            <div class="related-post-meta">
-              <span>{{ post.authorName }}</span>
-              <span>{{ formatDate(post.createdAt) }}</span>
-            </div>
-          </div>
-        </div>
+      <!-- 加载状态 -->
+      <div v-else-if="loading" class="loading">
+        正在加载帖子详情...
       </div>
       
-      <!-- 评论区 -->
-      <div class="comments-section">
-        <h3>评论区</h3>
-        
-        <!-- 发表评论 -->
-        <div class="comment-form" v-if="isLoggedIn">
-          <textarea v-model="newComment" placeholder="写下您的评论..." rows="3"></textarea>
-          <button class="submit-comment-btn" @click="submitComment">发表评论</button>
-        </div>
-        <div v-else class="login-prompt">
-          请先 <router-link to="/login">登录</router-link> 后发表评论
-        </div>
-        
-        <!-- 评论列表 -->
-        <div class="comments-list">
-          <div v-for="comment in comments" :key="comment.id" class="comment-item">
-            <img :src="comment.authorAvatar" alt="Comment author" class="comment-avatar" loading="lazy" />
-            <div class="comment-content">
-              <div class="comment-header">
-                <span class="comment-author">{{ comment.authorName }}</span>
-                <span class="comment-date">{{ formatDate(comment.createdAt) }}</span>
-              </div>
-              <p class="comment-text">{{ comment.content }}</p>
-            </div>
-          </div>
-        </div>
-        
-        <!-- 加载更多评论 -->
-        <div class="load-more">
-          <button class="load-more-btn" @click="loadMoreComments" v-if="hasMoreComments">
-            加载更多评论
-          </button>
-        </div>
+      <!-- 错误状态 -->
+      <div v-else-if="error" class="error">
+        {{ error }}
+      </div>
+      
+      <!-- 空数据状态 -->
+      <div v-else class="empty-state">
+        找不到帖子信息
       </div>
     </div>
   </div>
 </template>
 
 <script>
-import { ref, computed, onMounted } from 'vue'
+import { ref, onMounted, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-
-// 模拟帖子数据服务
-const mockPostService = {
-  getPostById(id) {
-    // 这里模拟从API获取帖子详情
-    // 在实际应用中，应该替换为真实的API调用
-    const posts = [
-      {
-        id: '1',
-        title: '探讨湖湘文化的现代传承与发展',
-        content: `
-          <p>湖湘文化作为中国传统文化的重要组成部分，在现代社会如何更好地传承和发展是一个值得思考的问题。</p>
-          
-          <h3>一、湖湘文化的历史渊源</h3>
-          <p>湖湘文化是指湖南省境内的地域文化，具有悠久的历史和丰富的内涵。它起源于先秦时期，经过秦汉、唐宋、明清等各个历史时期的发展，形成了独特的文化特色。</p>
-          
-          <h3>二、湖湘文化的现代价值</h3>
-          <p>在现代社会，湖湘文化仍然具有重要的价值。它不仅是湖南人民的精神财富，也是中华民族文化宝库中的重要组成部分。湖湘文化中的"经世致用"、"敢为人先"等精神，对于现代社会的发展仍然具有重要的启示意义。</p>
-          
-          <h3>三、湖湘文化的传承与创新</h3>
-          <p>传承和创新是湖湘文化发展的两大主题。我们需要在传承传统文化精髓的同时，不断进行创新，使湖湘文化适应现代社会的发展需求。</p>
-          
-          <p>以上是我对湖湘文化现代传承与发展的一些思考，欢迎大家一起探讨。</p>
-        `,
-        excerpt: '湖湘文化作为中国传统文化的重要组成部分，在现代社会如何更好地传承和发展是一个值得思考的问题...',
-        authorName: '文化探索者',
-        authorAvatar: 'https://picsum.photos/seed/user1/100/100',
-        createdAt: '2023-06-15',
-        views: 528,
-        comments: 42,
-        likes: 89,
-        category: '文化讨论'
-      },
-      {
-        id: '2',
-        title: '岳麓书院的历史与文化价值',
-        content: `
-          <p>岳麓书院是中国古代四大书院之一，位于湖南省长沙市岳麓山下，是湖湘文化的重要载体。</p>
-          
-          <h3>一、岳麓书院的历史沿革</h3>
-          <p>岳麓书院始建于北宋开宝九年（公元976年），历经宋、元、明、清各代，至清末光绪二十九年（公元1903年）改为湖南高等学堂，1926年正式定名为湖南大学。千余年来，岳麓书院弦歌不绝、办学不已，故有"千年学府"的美称。</p>
-          
-          <h3>二、岳麓书院的文化价值</h3>
-          <p>岳麓书院不仅是中国古代教育的重要场所，也是中国传统文化的重要载体。它培养了大批杰出人才，如王夫之、魏源、曾国藩、左宗棠、杨昌济等，对中国历史和文化的发展产生了深远的影响。</p>
-          
-          <h3>三、岳麓书院的建筑特色</h3>
-          <p>岳麓书院的建筑风格独特，体现了中国传统文化的精神内涵。它坐落在岳麓山下，依山而建，布局严谨，环境优美，是中国古代书院建筑的典范。</p>
-        `,
-        excerpt: '岳麓书院是中国古代四大书院之一，位于湖南省长沙市岳麓山下，是湖湘文化的重要载体...',
-        authorName: '历史学者',
-        authorAvatar: 'https://picsum.photos/seed/user2/100/100',
-        createdAt: '2023-06-10',
-        views: 389,
-        comments: 27,
-        likes: 65,
-        category: '历史研究'
-      },
-      {
-        id: '3',
-        title: '湘绣艺术的魅力与传承',
-        content: `
-          <p>湘绣是中国四大名绣之一，起源于湖南省长沙、湘潭一带，具有悠久的历史和独特的艺术风格。</p>
-          
-          <h3>一、湘绣的历史与发展</h3>
-          <p>湘绣的历史可以追溯到两千多年前的春秋战国时期。经过汉、唐、宋、元、明、清等各个历史时期的发展，湘绣逐渐形成了自己独特的艺术风格。</p>
-          
-          <h3>二、湘绣的艺术特色</h3>
-          <p>湘绣以其精湛的技艺、丰富的色彩和生动的形象而著称于世。它的主要特点是：针法多样、色彩鲜艳、形象生动、题材广泛。湘绣的代表作品有《百鸟朝凤》、《芙蓉鲤鱼》等。</p>
-          
-          <h3>三、湘绣的传承与发展</h3>
-          <p>在现代社会，湘绣面临着传承和发展的挑战。一方面，我们需要保护和传承传统的湘绣技艺；另一方面，我们也需要创新湘绣的表现形式和题材内容，使湘绣适应现代社会的审美需求。</p>
-        `,
-        excerpt: '湘绣是中国四大名绣之一，起源于湖南省长沙、湘潭一带，具有悠久的历史和独特的艺术风格...',
-        authorName: '艺术爱好者',
-        authorAvatar: 'https://picsum.photos/seed/user3/100/100',
-        createdAt: '2023-06-05',
-        views: 412,
-        comments: 33,
-        likes: 76,
-        category: '传统艺术'
-      }
-    ]
-    
-    return posts.find(post => post.id === id)
-  },
-  
-  getRelatedPosts(id) {
-    // 模拟获取相关帖子
-    const posts = [
-      {
-        id: '2',
-        title: '岳麓书院的历史与文化价值',
-        authorName: '历史学者',
-        createdAt: '2023-06-10'
-      },
-      {
-        id: '3',
-        title: '湘绣艺术的魅力与传承',
-        authorName: '艺术爱好者',
-        createdAt: '2023-06-05'
-      }
-    ]
-    
-    return posts.filter(post => post.id !== id)
-  },
-  
-  getCommentsByPostId(postId) {
-    // 模拟获取评论数据
-    const comments = [
-      {
-        id: '1',
-        content: '非常赞同您的观点！湖湘文化确实需要在传承中创新，才能更好地适应现代社会的发展需求。',
-        authorName: '文化爱好者',
-        authorAvatar: 'https://picsum.photos/seed/comment1/100/100',
-        createdAt: '2023-06-16'
-      },
-      {
-        id: '2',
-        content: '我认为湖湘文化中的"经世致用"精神对现代社会仍然具有重要的指导意义。我们应该继承和发扬这种精神。',
-        authorName: '传统文化研究者',
-        authorAvatar: 'https://picsum.photos/seed/comment2/100/100',
-        createdAt: '2023-06-17'
-      },
-      {
-        id: '3',
-        content: '期待看到更多关于湖湘文化的讨论和研究！',
-        authorName: '学生',
-        authorAvatar: 'https://picsum.photos/seed/comment3/100/100',
-        createdAt: '2023-06-18'
-      }
-    ]
-    
-    return comments
-  }
-}
+import CommentsSection from '../components/CommentsSection.vue'
+import { request } from '../services/api.js'
 
 export default {
   name: 'PostDetailPage',
-  props: {
-    showAlert: {
-      type: Function,
-      default: null
-    }
+  components: {
+    CommentsSection
   },
-  setup(props) {
+  setup() {
     const router = useRouter()
     const route = useRoute()
     
-    const postId = route.params.id
     const currentPost = ref(null)
-    const relatedPosts = ref([])
-    const comments = ref([])
-    const newComment = ref('')
-    const isLoggedIn = ref(false)
-    const user = ref(null)
-    const liked = ref(false)
-    const isUserAuthor = ref(false)
-    const hasMoreComments = ref(false)
+    const loading = ref(true)
+    const error = ref('')
+    const postId = parseInt(route.params.id)
+    const commentCount = ref(0)
+    const commentsLoading = ref(false)
+    const isLiked = ref(false)  // 新增：记录是否已点赞
+    
+    // 检查当前用户是否已点赞此帖子
+    const checkIfLiked = () => {
+      const likedPosts = JSON.parse(localStorage.getItem('liked_posts') || '[]');
+      return likedPosts.includes(postId);
+    }
+    
+    // 更新点赞状态
+    const updateLikeStatus = () => {
+      isLiked.value = checkIfLiked();
+    }
+    
+    // 监听storage变化，以便在其他标签页中点赞后能同步状态
+    const handleStorageChange = () => {
+      updateLikeStatus();
+    };
+    
+    // 初始化时检查是否已点赞
+    onMounted(() => {
+      fetchPostDetail()
+      // 添加延时确保数据加载完成后再检查点赞状态
+      setTimeout(updateLikeStatus, 100);
+      
+      // 监听storage变化
+      window.addEventListener('storage', handleStorageChange);
+    });
+    
+    // 组件卸载时移除事件监听
+    onUnmounted(() => {
+      window.removeEventListener('storage', handleStorageChange);
+    });
+    
+    // 检查当前用户是否为帖子作者或管理员
+    const canEditDelete = computed(() => {
+      if (!currentPost.value || !localStorage.getItem('user')) return false
+      
+      const currentUser = JSON.parse(localStorage.getItem('user'))
+      return (
+        currentPost.value.author_id === currentUser.id || 
+        currentUser.is_admin
+      )
+    })
+    
+    // 点赞/取消点赞帖子
+    const toggleLike = async () => {
+      if (!localStorage.getItem('access_token')) {
+        alert('请先登录后再点赞')
+        return
+      }
+      
+      if (isLiked.value) {
+        alert('您已经点过赞了')
+        return
+      }
+      
+      try {
+        console.log('开始发送点赞请求...')
+        const response = await request(`/posts/${postId}/like`, 'POST')
+        console.log('点赞API响应:', response)
+        
+        if (response.success) {
+          // 更新点赞数
+          if (currentPost.value) {
+            currentPost.value.likes_count = response.likes_count
+            console.log('更新后的点赞数:', response.likes_count)
+          }
+          isLiked.value = true
+          
+          // 存储已点赞的帖子ID
+          const likedPosts = JSON.parse(localStorage.getItem('liked_posts') || '[]');
+          likedPosts.push(postId);
+          localStorage.setItem('liked_posts', JSON.stringify(likedPosts))
+          
+          // 更新点赞按钮的状态
+          const likeBtn = document.querySelector('.like-btn');
+          if (likeBtn) {
+            likeBtn.classList.add('liked');
+          }
+          
+          // 显示成功消息
+          alert('点赞成功！');
+        } else {
+          console.error('点赞失败:', response.message)
+          if(response.message === '您已经点过赞了') {
+            alert(response.message)
+            isLiked.value = true; // 确保状态更新
+          } else {
+            alert(response.message || '点赞失败')
+          }
+        }
+      } catch (error) {
+        console.error('点赞请求失败:', error)
+        if (error.message.includes('401') || error.message.includes('认证') || error.message.includes('登录')) {
+          alert('登录已过期，请重新登录')
+          // 触发登出事件
+          window.dispatchEvent(new Event('logout'));
+        } else {
+          alert(error.message || '点赞失败')
+        }
+      }
+    }
     
     // 获取帖子详情
-    const fetchPostDetail = () => {
-      const post = mockPostService.getPostById(postId)
-      if (post) {
-        currentPost.value = post
+    const fetchPostDetail = async () => {
+      try {
+        error.value = ''
         
-        // 更新浏览量
-        currentPost.value.views += 1
-        
-        // 获取相关帖子
-        relatedPosts.value = mockPostService.getRelatedPosts(postId)
-        
-        // 获取评论
-        comments.value = mockPostService.getCommentsByPostId(postId)
-        
-        // 检查是否已登录
-        const userInfo = localStorage.getItem('user')
-        if (userInfo) {
-          isLoggedIn.value = true
-          user.value = JSON.parse(userInfo)
-          
-          // 检查是否是作者
-          isUserAuthor.value = user.value.username === currentPost.value.authorName
-          
-          // 检查是否已点赞（模拟）
-          const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]')
-          liked.value = likedPosts.includes(postId)
+        // 检查用户是否已登录
+        const token = localStorage.getItem('access_token')
+        if (!token) {
+          error.value = '请先登录后再查看帖子详情'
+          return
         }
-      } else {
-        // 如果帖子不存在，显示提示
-        if (props.showAlert) {
-          props.showAlert('帖子不存在或已被删除', 'error')
+        
+        console.log(`尝试获取帖子详情，ID: ${postId}`); // 添加调试信息
+        
+        const response = await request(`/posts/${postId}`, 'GET')
+        
+        console.log(`API响应:`, response); // 添加调试信息
+        
+        if (response && response.post) {
+          currentPost.value = response.post
+          console.log(`成功获取帖子:`, response.post.title) // 添加调试信息
+        } else {
+          // 检查是否是认证相关错误
+          if (response && response.error && (response.error.includes('认证') || response.error.includes('令牌') || response.error.includes('token') || response.error.includes('401') || response.error.includes('Unauthorized'))) {
+            error.value = '登录已过期，请重新登录'
+            // 清除过期的令牌
+            localStorage.removeItem('access_token')
+            localStorage.removeItem('user')
+          } else {
+            throw new Error(response?.message || response?.error || '获取帖子详情失败')
+          }
         }
-        // 重定向回社区页面
-        setTimeout(() => {
-          router.push('/community')
-        }, 1500)
+      } catch (err) {
+        console.error('获取帖子详情错误:', err)
+        // 检查错误是否与认证有关
+        if (err.message.includes('401') || err.message.toLowerCase().includes('unauthorized') || err.message.includes('认证') || err.message.includes('令牌') || err.message.includes('token')) {
+          error.value = '登录已过期，请重新登录'
+          // 清除过期的令牌
+          localStorage.removeItem('access_token')
+          localStorage.removeItem('user')
+        } else if (err.message.includes('404')) {
+          error.value = '帖子不存在'
+        } else {
+          error.value = err.message || '获取帖子详情失败'
+        }
+      } finally {
+        loading.value = false
       }
+    }
+    
+    // 获取评论数量
+    const fetchCommentCount = async () => {
+      try {
+        commentsLoading.value = true
+        const response = await request(`/comments?post_id=${postId}`, 'GET')
+        
+        if (response.comments) {
+          commentCount.value = response.comments.length
+        }
+      } catch (err) {
+        console.error('获取评论数错误:', err)
+        commentCount.value = 0
+      } finally {
+        commentsLoading.value = false
+      }
+    }
+    
+    // 编辑帖子
+    const editPost = () => {
+      router.push(`/edit-post/${postId}`)
+    }
+    
+    // 删除帖子
+    const deletePost = async () => {
+      if (!confirm('确定要删除这个帖子吗？此操作不可撤销。')) {
+        return
+      }
+      
+      try {
+        const token = localStorage.getItem('access_token')
+        if (!token) {
+          error.value = '请先登录'
+          return
+        }
+        
+        const response = await request(`/posts/${postId}`, 'DELETE')
+        
+        if (response.success) {
+          alert('帖子删除成功')
+          router.push('/community')
+        } else {
+          throw new Error(response.message || '删除帖子失败')
+        }
+      } catch (err) {
+        console.error('删除帖子错误:', err)
+        alert(err.message || '删除帖子失败')
+      }
+    }
+    
+    // 格式化日期
+    const formatDate = (dateString) => {
+      const date = new Date(dateString)
+      return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      })
     }
     
     // 格式化帖子内容
     const formatPostContent = (content) => {
       if (!content) return ''
-      return content.trim()
+      // 简单的内容格式化，换行转为<br>
+      return content.replace(/\n/g, '<br>')
     }
     
-    // 格式化日期
-    const formatDate = (dateString) => {
-      if (!dateString) return ''
-      const date = new Date(dateString)
-      return date.toLocaleDateString('zh-CN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      })
-    }
-    
-    // 发表评论
-    const submitComment = () => {
-      if (!newComment.value.trim()) {
-        if (props.showAlert) {
-          props.showAlert('评论内容不能为空', 'warning')
-        }
-        return
-      }
-      
-      // 创建新评论
-      const newCommentObj = {
-        id: Date.now().toString(),
-        content: newComment.value.trim(),
-        authorName: user.value.username,
-        authorAvatar: `https://picsum.photos/seed/${user.value.username}/100/100`,
-        createdAt: new Date().toISOString().split('T')[0]
-      }
-      
-      // 添加到评论列表
-      comments.value.unshift(newCommentObj)
-      
-      // 更新评论数
-      if (currentPost.value) {
-        currentPost.value.comments += 1
-      }
-      
-      // 清空评论框
-      newComment.value = ''
-      
-      // 显示成功提示
-      if (props.showAlert) {
-        props.showAlert('评论发表成功', 'success')
-      }
-    }
-    
-    // 切换点赞状态
-    const toggleLike = () => {
-      if (!isLoggedIn.value) {
-        if (props.showAlert) {
-          props.showAlert('请先登录后点赞', 'info')
-        }
-        return
-      }
-      
-      liked.value = !liked.value
-      
-      // 更新点赞数
-      if (currentPost.value) {
-        currentPost.value.likes += liked.value ? 1 : -1
-      }
-      
-      // 保存点赞状态（模拟）
-      const likedPosts = JSON.parse(localStorage.getItem('likedPosts') || '[]')
-      if (liked.value) {
-        likedPosts.push(postId)
-      } else {
-        const index = likedPosts.indexOf(postId)
-        if (index > -1) {
-          likedPosts.splice(index, 1)
-        }
-      }
-      localStorage.setItem('likedPosts', JSON.stringify(likedPosts))
-    }
-    
-    // 跳转到其他帖子详情
-    const goToPostDetail = (id) => {
-      router.push(`/post-detail/${id}`)
-    }
-    
-    // 返回社区页面
+    // 返回上一页
     const goBack = () => {
-      router.push('/community')
+      router.go(-1)
     }
     
-    // 加载更多评论
-    const loadMoreComments = () => {
-      // 模拟加载更多评论
-      if (props.showAlert) {
-        props.showAlert('已加载全部评论', 'info')
-      }
-      hasMoreComments.value = false
-    }
-    
-    // 页面加载时获取数据
     onMounted(() => {
       fetchPostDetail()
+      fetchCommentCount()
     })
     
     return {
       currentPost,
-      relatedPosts,
-      comments,
-      newComment,
-      isLoggedIn,
-      liked,
-      isUserAuthor,
-      hasMoreComments,
-      formatPostContent,
+      loading,
+      error,
+      postId,
+      commentCount,
+      commentsLoading,
+      canEditDelete,
+      editPost,
+      deletePost,
       formatDate,
-      submitComment,
-      toggleLike,
-      goToPostDetail,
+      formatPostContent,
       goBack,
-      loadMoreComments
+      toggleLike,  // 添加点赞功能到暴露的函数列表
+      isLiked  // 添加点赞状态到暴露的变量列表
     }
   }
 }
@@ -436,63 +351,60 @@ export default {
 <style scoped>
 .post-detail-page {
   padding: 2rem 0;
-}
-
-.back-button-container {
-  padding: 0 1rem;
-  margin-bottom: 1rem;
-}
-
-.back-button {
-  background-color: transparent;
-  border: 1px solid #ddd;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.3s;
-}
-
-.back-button:hover {
-  background-color: #f8f9fa;
-  border-color: #ccc;
+  min-height: calc(100vh - 200px);
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 800px;
   margin: 0 auto;
   padding: 0 1rem;
 }
 
+.back-button-container {
+  margin-bottom: 1rem;
+}
+
+.back-button {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.back-button:hover {
+  background: #e9ecef;
+}
+
 .post-detail {
-  background-color: white;
+  background: white;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   padding: 2rem;
-  margin-bottom: 2rem;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
 }
 
 .post-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid #eee;
+  margin-bottom: 1.5rem;
 }
 
 .post-author {
   display: flex;
   align-items: center;
-  gap: 1rem;
 }
 
 .author-avatar {
-  width: 60px;
-  height: 60px;
+  width: 50px;
+  height: 50px;
   border-radius: 50%;
+  margin-right: 1rem;
   object-fit: cover;
 }
 
@@ -504,289 +416,151 @@ export default {
 .author-name {
   font-weight: bold;
   color: #333;
-  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
 }
 
 .post-date {
+  color: #666;
   font-size: 0.9rem;
-  color: #999;
 }
 
 .post-stats {
   display: flex;
   gap: 1.5rem;
+  color: #666;
 }
 
 .stat-item {
   display: flex;
   align-items: center;
   gap: 0.25rem;
-  font-size: 0.9rem;
-  color: #666;
+}
+
+.post-content {
+  margin-bottom: 2rem;
 }
 
 .post-title {
-  font-size: 2rem;
+  font-size: 1.8rem;
   color: #333;
-  margin: 0 0 1.5rem 0;
-  line-height: 1.3;
-}
-
-.post-body {
-  color: #333;
-  line-height: 1.8;
-  margin-bottom: 2rem;
-}
-
-.post-body p {
   margin-bottom: 1rem;
 }
 
-.post-body h3 {
-  font-size: 1.5rem;
-  color: #333;
-  margin: 1.5rem 0 1rem 0;
-}
-
-.post-tags {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
-}
-
-.post-category {
-  background-color: #f0f0f0;
-  padding: 0.25rem 0.75rem;
-  border-radius: 15px;
-  font-size: 0.9rem;
-  color: #666;
+.post-body {
+  color: #555;
+  line-height: 1.8;
+  margin-bottom: 1.5rem;
 }
 
 .post-actions {
   display: flex;
   gap: 1rem;
+  margin-top: 1.5rem;
   padding-top: 1rem;
   border-top: 1px solid #eee;
 }
 
 .action-btn {
-  background-color: transparent;
-  border: 1px solid #ddd;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
-  border-radius: 4px;
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  transition: all 0.3s;
+  padding: 0.5rem 1rem;
+  border: 1px solid #ddd;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
 .action-btn:hover {
-  background-color: #f8f9fa;
-  border-color: #ccc;
+  background: #f8f9fa;
 }
 
-.action-btn i.liked {
-  color: var(--primary-color);
+.delete-btn {
+  background: #f8d7da;
+  color: #721c24;
+  border-color: #f5c6cb;
 }
 
-.related-posts {
-  background-color: white;
+.delete-btn:hover {
+  background: #f5c6cb;
+}
+
+.post-stats-detail {
+  display: flex;
+  gap: 1.5rem;
+  align-items: center;
+  margin: 1rem 0;
+  padding: 0.75rem;
+  background: #f8f9fa;
   border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  padding: 1.5rem;
-  margin-bottom: 2rem;
 }
 
-.related-posts h3 {
-  margin-top: 0;
-  margin-bottom: 1rem;
-  color: #333;
-  font-size: 1.3rem;
-}
-
-.related-posts-list {
-  display: grid;
-  gap: 1rem;
-}
-
-.related-post-item {
-  padding: 1rem;
-  border: 1px solid #eee;
-  border-radius: 4px;
+.like-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: none;
+  border: none;
+  color: #666;
   cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
   transition: all 0.3s;
 }
 
-.related-post-item:hover {
-  background-color: #f8f9fa;
-  border-color: #ddd;
+.like-btn:hover {
+  background: #e9ecef;
+  color: #007bff;
 }
 
-.related-post-title {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.1rem;
-  color: #333;
+.like-btn.liked {
+  color: #007bff;
 }
 
-.related-post-meta {
-  display: flex;
-  gap: 1rem;
-  font-size: 0.85rem;
-  color: #999;
-}
-
-.comments-section {
-  background-color: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  padding: 1.5rem;
-}
-
-.comments-section h3 {
-  margin-top: 0;
-  margin-bottom: 1.5rem;
-  color: #333;
-  font-size: 1.3rem;
-}
-
-.comment-form {
-  margin-bottom: 2rem;
-}
-
-.comment-form textarea {
-  width: 100%;
-  padding: 1rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  resize: vertical;
-  font-size: 1rem;
-  margin-bottom: 1rem;
-}
-
-.submit-comment-btn {
-  background-color: var(--primary-color);
-  color: white;
-  border: none;
-  padding: 0.75rem 1.5rem;
-  cursor: pointer;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: background-color 0.3s;
-}
-
-.submit-comment-btn:hover {
-  background-color: var(--primary-dark);
-}
-
-.login-prompt {
-  padding: 1.5rem;
-  background-color: #f8f9fa;
-  border-radius: 4px;
+.loading {
   text-align: center;
-  margin-bottom: 2rem;
+  padding: 3rem;
+  font-size: 1.2rem;
   color: #666;
 }
 
-.login-prompt a {
-  color: var(--primary-color);
-  text-decoration: none;
-}
-
-.login-prompt a:hover {
-  text-decoration: underline;
-}
-
-.comments-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.comment-item {
-  display: flex;
-  gap: 1rem;
-}
-
-.comment-avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
-}
-
-.comment-content {
-  flex: 1;
-}
-
-.comment-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.5rem;
-}
-
-.comment-author {
-  font-weight: bold;
-  color: #333;
-}
-
-.comment-date {
-  font-size: 0.85rem;
-  color: #999;
-}
-
-.comment-text {
-  color: #333;
-  line-height: 1.6;
-  margin: 0;
-}
-
-.load-more {
+.error {
   text-align: center;
-  margin-top: 2rem;
+  padding: 3rem;
+  font-size: 1.2rem;
+  color: #d32f2f;
+  background: #ffebee;
+  border-radius: 8px;
+  margin: 1rem 0;
 }
 
-.load-more-btn {
-  background-color: transparent;
-  border: 1px solid #ddd;
-  padding: 0.75rem 1.5rem;
-  cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.3s;
+.post-meta {
+  margin-bottom: 1rem;
 }
 
-.load-more-btn:hover {
-  background-color: #f8f9fa;
-  border-color: #ccc;
+.post-category {
+  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 15px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  display: inline-block;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .post-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1rem;
-  }
-  
-  .post-title {
-    font-size: 1.5rem;
-  }
-  
-  .post-actions {
-    flex-wrap: wrap;
-  }
-  
-  .comment-item {
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-  
-  .comment-header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
-  }
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  font-size: 1.2rem;
+  color: #666;
+  background: #f8f9fa;
+  border-radius: 8px;
+  margin: 1rem 0;
+}
+
+.comment-count-loading {
+  color: #666;
+  font-style: italic;
 }
 </style>

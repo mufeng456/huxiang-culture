@@ -9,6 +9,15 @@
           <span>{{ resource.category }}</span> &gt;
           <span>{{ resource.title }}</span>
         </div>
+        <!-- 编辑和删除按钮 - 只有贡献者可见 -->
+        <div class="resource-actions" v-if="isContributor">
+          <button class="action-btn edit-btn" @click="editResource">
+            <i class="fas fa-edit"></i> 编辑
+          </button>
+          <button class="action-btn delete-btn" @click="deleteResource">
+            <i class="fas fa-trash"></i> 删除
+          </button>
+        </div>
       </div>
     </div>
 
@@ -168,7 +177,8 @@ export default {
       default: () => ({
         isLoggedIn: false,
         username: '',
-        avatar: ''
+        avatar: '',
+        id: null
       })
     }
   },
@@ -294,6 +304,13 @@ export default {
     
     // 当前图片索引
     const currentImageIndex = ref(0)
+    
+    // 检查当前用户是否为资源贡献者
+    const isContributor = computed(() => {
+      if (!props.user.isLoggedIn) return false
+      // 这里简化处理，实际项目中应该有 contributorId 字段进行精确匹配
+      return props.user.username === resource.value.contributorName
+    })
     
     // 评论相关 - 设置为没有评论
     const comments = ref([])
@@ -445,6 +462,43 @@ export default {
       }
       return ''
     })
+    
+    // 编辑资源
+    const editResource = () => {
+      if (!props.user.isLoggedIn) {
+        if (props.showLoginModal) {
+          props.showLoginModal()
+        }
+        return
+      }
+      
+      if (props.showAlert) {
+        props.showAlert('info', '跳转到编辑页面')
+      }
+      // 这里应该跳转到编辑页面，由于路由未定义，暂时用提示代替
+      console.log('编辑资源:', resource.value.id)
+    }
+    
+    // 删除资源
+    const deleteResource = () => {
+      if (!props.user.isLoggedIn) {
+        if (props.showLoginModal) {
+          props.showLoginModal()
+        }
+        return
+      }
+      
+      if (!window.confirm('确定要删除这个文化资源吗？此操作不可撤销。')) {
+        return
+      }
+      
+      if (props.showAlert) {
+        props.showAlert('success', '资源删除成功！')
+      }
+      // 这里应该调用API删除资源并跳转，由于API未实现，暂时用提示代替
+      console.log('删除资源:', resource.value.id)
+      router.push({ name: 'CulturalResourcesPage' })
+    }
     
     // 设置当前图片
     const setCurrentImage = (index) => {
@@ -721,6 +775,7 @@ export default {
       replyContent,
       isSubmittingReply,
       detailParagraphs,
+      isContributor,
       setCurrentImage,
       toggleLikeResource,
       shareResource,
@@ -736,7 +791,9 @@ export default {
       submitReply,
       goBack,
       goToResources,
-      goToResourceDetail
+      goToResourceDetail,
+      editResource,
+      deleteResource
     }
   }
 }
@@ -751,6 +808,46 @@ export default {
   background-color: #f8f9fa;
   padding: 1rem 0;
   border-bottom: 1px solid #eee;
+}
+
+.container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.resource-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.action-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.edit-btn {
+  background: #e3f2fd;
+  color: #1976d2;
+}
+
+.edit-btn:hover {
+  background: #bbdefb;
+}
+
+.delete-btn {
+  background: #ffebee;
+  color: #d32f2f;
+}
+
+.delete-btn:hover {
+  background: #ffcdd2;
 }
 
 .breadcrumb {

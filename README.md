@@ -9,7 +9,7 @@
 项目采用前后端分离的架构设计，分为两个主要部分：
 
 1. **HuXiang_github**：基于Vue 3的前端项目
-2. **HX_project**：基于Flask的后端项目
+2. **HX_project**（位于backend_setup目录）：基于Flask的后端项目
 
 ## 技术栈
 
@@ -28,10 +28,14 @@
 
 | 技术/框架 | 版本 | 用途 |
 |---------|------|------|
-| Flask | - | Python Web框架，提供后端API服务 |
+| Flask | 2.3.3 | Python Web框架，提供后端API服务 |
 | Flask-SQLAlchemy | 3.0.5 | ORM框架，简化数据库操作 |
 | PyMySQL | 1.1.0 | MySQL数据库驱动，用于数据库连接和操作 |
+| Flask-CORS | 4.0.0 | 处理跨域请求，支持前端API调用 |
+| Flask-Migrate | 4.0.5 | 数据库迁移工具，管理数据库结构变更 |
 | Werkzeug | 2.3.7 | WSGI工具库，提供Web服务器网关接口实现 |
+| PyJWT | 2.8.0 | JSON Web Token实现，用于用户身份验证 |
+| flask-jwt-extended | 4.5.3 | JWT扩展库，提供更完善的认证功能 |
 
 ## 功能模块
 
@@ -68,29 +72,103 @@
 
 提供后台管理功能，支持管理员对文化资源、用户和社区内容进行管理和维护
 
-### 3. 互动社区模块
+## 开发环境配置
 
-提供用户交流互动的平台，支持用户发布、浏览和评论文化相关的帖子和讨论。该模块需要用户登录才能访问。
+### 前端环境配置
 
-### 4. 数字化展示模块
+1. 确保已安装Node.js 14.18+ 或 16+版本
+2. 克隆项目仓库到本地
+3. 进入项目根目录，安装依赖：
+   ```bash
+   npm install
+   ```
+4. 启动前端开发服务器：
+   ```bash
+   npm run dev
+   ```
+   前端服务将在 `http://localhost:5173` 上运行
 
-利用Unity WebGL技术实现文化资源的3D展示和互动体验，为用户提供沉浸式的文化体验。
+### 后端环境配置
 
-### 5. 知识图谱模块
+1. 确保已安装Python 3.8+
+2. 进入 `backend_setup` 目录
+3. 安装依赖：
+   ```bash
+   pip install -r requirements.txt
+   ```
+4. 配置数据库连接信息，在 `.env` 文件中设置：
+   ```env
+   DATABASE_URL=mysql+pymysql://username:password@localhost/huxiang_culture
+   DEV_DATABASE_URL=sqlite:///instance/huxiang_culture_dev.db
+   SECRET_KEY=your-secret-key-here
+   JWT_SECRET_KEY=your-jwt-secret-key-here
+   ```
+5. 初始化数据库：
+   ```bash
+   python init_db.py
+   ```
+6. 启动后端服务：
+   ```bash
+   python app.py
+   ```
+   后端服务将在 `http://localhost:5000` 上运行
 
-可视化展示湖湘文化元素之间的关联关系，帮助用户更好地理解和探索湖湘文化的内在联系。
+## 前后端集成
 
-### 6. 用户认证与管理模块
+前端通过API与后端进行数据交互，默认情况下：
+- 前端运行在 `http://localhost:5173`
+- 后端API运行在 `http://localhost:5000`
+- 通过CORS配置实现跨域访问
 
-- **登录/注册**：支持用户通过用户名/邮箱和密码进行登录和注册
-- **个人资料**：用户可以查看和管理个人信息
-- **权限控制**：区分普通用户和管理员权限
+## API接口说明
 
+### 用户认证接口
 
+- `POST /api/register` - 用户注册
+- `POST /api/login` - 用户登录
+- `POST /api/logout` - 用户登出
+- `GET/PUT /api/profile/:userId` - 获取/更新用户资料
 
-### 7. 管理员模块
+### 文化资源接口
 
-提供后台管理功能，支持管理员对文化资源、用户和社区内容进行管理和维护。
+- `GET /api/resources` - 获取文化资源列表（支持分页、分类筛选）
+- `POST /api/resources` - 创建文化资源
+- `GET/PUT/DELETE /api/resources/:id` - 获取/更新/删除特定资源
+
+### 社区功能接口
+
+- `GET /api/posts` - 获取帖子列表（支持分页）
+- `POST /api/posts` - 创建帖子
+- `GET/PUT/DELETE /api/posts/:id` - 获取/更新/删除特定帖子
+- `GET /api/comments` - 获取评论列表
+- `POST /api/comments` - 创建评论
+
+### 点赞和浏览量接口
+
+- `POST /api/posts/:postId/like` - 为帖子点赞
+- `GET /api/posts/:postId/liked` - 检查是否已点赞
+
+### 管理员接口
+
+- `GET /api/admin/users` - 获取所有用户列表（仅管理员）
+
+## 项目构建与部署
+
+### 前端构建
+
+在项目根目录执行以下命令构建生产版本：
+```bash
+npm run build
+```
+构建产物将生成在 `dist` 目录中
+
+### 后端部署
+
+后端服务可以通过多种方式进行部署，推荐使用Gunicorn作为WSGI服务器：
+```bash
+cd backend_setup
+gunicorn -w 4 -b 0.0.0.0:5000 app:app
+```
 
 ## 前端项目结构
 
@@ -100,73 +178,51 @@ src/
 │   ├── css/        # 样式文件
 │   └── imgs/       # 图片文件
 ├── components/     # Vue组件
+│   ├── CommentsSection.vue  # 评论组件
+│   └── Navbar.vue           # 导航栏组件
 ├── views/          # 页面组件
-├── services/       # 服务层，处理API请求和业务逻辑
 ├── router/         # 路由配置
+├── services/       # API服务
 ├── App.vue         # 根组件
-└── main.js         # 应用入口文件
+└── main.js         # 应用入口
 ```
-<mcfile name="README.md" path="e:/Project_huxiangwenhua/HuXiang_github/README.md"></mcfile>
 
-## 核心页面组件
+## 后端项目结构
 
-| 页面组件 | 路径 | 功能描述 |
-|--------|------|---------|
-| HomePage | src/views/HomePage.vue | 平台首页，展示核心功能入口和推荐资源 |
-| CulturalResourcesPage | src/views/CulturalResourcesPage.vue | 文化资源库，展示各类湖湘文化资源 |
-| CommunityPage | src/views/CommunityPage.vue | 互动社区，提供用户交流平台 |
-| DigitalShowcasePage | src/views/DigitalShowcasePage.vue | 数字化展示，提供3D文化体验 |
-| AboutPage | src/views/AboutPage.vue | 关于我们，介绍平台的背景和宗旨 |
-| ContactPage | src/views/ContactPage.vue | 联系我们，提供联系方式和反馈渠道 |
-| ResourceDetailPage | src/views/ResourceDetailPage.vue | 资源详情，展示单个文化资源的详细信息 |
-| KnowledgeGraphPage | src/views/KnowledgeGraphPage.vue | 知识图谱，可视化展示文化元素关联 |
-| UnityWebGL | src/views/UnityWebGL.vue | Unity WebGL内容展示 |
-| LoginView/RegisterView | src/views/LoginView.vue/src/views/RegisterView.vue | 用户登录和注册页面 |
-| ProfilePage | src/views/ProfilePage.vue | 用户个人资料页面 |
-| AdminPage | src/views/AdminPage.vue | 管理员后台管理页面 |
-
-<mcfile name="index.js" path="e:/Project_huxiangwenhua/HuXiang_github/src/router/index.js"></mcfile>
-
-## 特色功能
-
-### 1. 响应式设计
-
-平台采用响应式设计，支持在不同尺寸的设备上提供良好的用户体验，包括桌面端、平板和移动设备。
-
-### 2. 模拟数据服务
-
-前端项目包含模拟数据服务，用于在后端API未完全开发时提供数据支持，确保前端功能可以正常演示和测试。
-
-### 3. 全局事件总线
-
-实现了全局事件总线机制，方便组件间的通信和数据传递。
-
-```javascript
-// 全局事件总线 - 用于组件间通信
-app.config.globalProperties.$eventBus = app
 ```
-<mcfile name="main.js" path="e:/Project_huxiangwenhua/HuXiang_github/src/main.js"></mcfile>
+backend_setup/
+├── app.py              # 主应用文件，包含所有路由和模型
+├── requirements.txt    # 项目依赖
+├── .env               # 环境变量配置
+├── config.py          # 应用配置
+├── init_db.py         # 数据库初始化脚本
+├── logging_config.py  # 日志配置
+├── instance/          # 数据库实例存储目录
+├── logs/              # 日志文件目录
+└── README.md          # 项目说明
+```
 
-## 项目意义
+## 初始账户
 
-湖湘文化数字化平台通过现代信息技术手段，为湖湘文化的保护、传承和传播提供了新的途径。该平台不仅可以促进湖湘文化的研究和交流，还可以增强公众对湖湘文化的认知和认同，对于推动湖湘文化的创新发展具有重要意义。
+- 管理员账号：用户名 `admin`，密码 `admin123`
 
-## 开发与部署
+## 注意事项
 
-### 前端开发环境设置
+1. 确保前后端服务都正常运行后才能正常使用平台功能
+2. 数据库初始化是必要的步骤，确保所有表结构和初始数据正确创建
+3. 在生产环境中，请务必更改默认的密钥配置
+4. 前端开发时，Vite会自动代理API请求到后端服务，无需担心跨域问题
 
-1. 安装Node.js 14.18+ 或 16+
-2. 克隆项目仓库
-3. 安装依赖：`npm install`
-4. 启动开发服务器：`npm run dev`
-5. 构建生产版本：`npm run build`
+## 贡献指南
 
-### 后端开发环境设置
+如果您希望为项目做出贡献，请遵循以下步骤：
 
-1. 安装Python和pip
-2. 安装依赖：`pip install -r requirements.txt`
-3. 运行应用：`python run.py`
+1. Fork 项目
+2. 创建功能分支 (`git checkout -b feature/FeatureName`)
+3. 提交更改 (`git commit -m 'Add some FeatureName'`)
+4. 推送到分支 (`git push origin feature/FeatureName`)
+5. 创建 Pull Request
 
-## 结语
+## 许可证
 
-湖湘文化数字化平台是一个融合了现代信息技术和传统文化的创新项目，旨在通过数字化手段推动湖湘文化的保护、传承和发展。随着项目的不断完善和优化，相信该平台将为湖湘文化的传播和弘扬做出更大的贡献。
+本项目采用 MIT 许可证 - 详见 [LICENSE](./LICENSE) 文件

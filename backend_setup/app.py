@@ -99,6 +99,15 @@ class Post(db.Model):
     views = db.Column(db.Integer, default=0)  # 添加浏览量字段
     category = db.Column(db.String(100), default='文化讨论')  # 添加分类字段
     
+    # 添加一个动态属性来获取实际的点赞数
+    @property
+    def likes(self):
+        return self.likes_count
+        
+    @likes.setter
+    def likes(self, value):
+        self.likes_count = value
+
     author = db.relationship('User', backref=db.backref('posts', lazy=True))
     
     def to_dict(self):
@@ -618,8 +627,10 @@ def create_app(config_name=None):
                         db.session.rollback()
                         app.logger.error(f'更新帖子浏览量时出错: {str(e)}')
 
-                # 对于GET请求，返回success和post数据
-                return jsonify({'success': True, 'post': post.to_dict()})
+                # 对于GET请求，返回success和post数据，包含author_id等关键字段
+                post_data = post.to_dict()
+                post_data['author_id'] = post.author_id  # 确保author_id字段存在
+                return jsonify({'success': True, 'post': post_data})
             
             # 检查权限：只能修改/删除自己创建的帖子，或管理员可以修改任意帖子
             # 这里只针对PUT和DELETE请求进行权限检查
@@ -628,6 +639,12 @@ def create_app(config_name=None):
                 app.logger.error(f'帖子 {post_id} 缺少author_id字段，无法验证权限')
                 return jsonify({'error': '帖子信息不完整', 'code': 500}), 500
                 
+            # 获取当前用户对象以检查权限
+            current_user_obj = User.query.get(current_user_id)
+            if not current_user_obj:
+                app.logger.warning(f'认证用户不存在: {current_user_id}')
+                return jsonify({'error': '用户不存在', 'code': 404}), 404
+
             if post_author_id != current_user_id and not current_user_obj.is_admin:
                 app.logger.warning(f'用户 {current_user_id} 尝试访问无权限的帖子: {post_id}')
                 return jsonify({'error': '无权访问此资源', 'code': 403}), 403
@@ -657,10 +674,12 @@ def create_app(config_name=None):
                     db.session.commit()
                     app.logger.info(f'用户 {current_user_id} 更新了帖子: {post_id}')
                         
+                    post_data = post.to_dict()
+                    post_data['author_id'] = post.author_id  # 确保author_id字段存在
                     return jsonify({
                         'success': True,
                         'message': '帖子更新成功',
-                        'post': post.to_dict()
+                        'post': post_data
                     })
                 except Exception as e:
                     db.session.rollback()
@@ -669,6 +688,10 @@ def create_app(config_name=None):
                 
             elif request.method == 'DELETE':
                 try:
+                    # 先删除相关的评论
+                    db.session.execute(db.delete(Comment).where(Comment.post_id == post_id))
+                    
+                    # 然后删除帖子
                     db.session.delete(post)
                     db.session.commit()
                     app.logger.info(f'用户 {current_user_id} 删除了帖子: {post_id}')
@@ -690,50 +713,49 @@ def create_app(config_name=None):
             return jsonify({'error': '服务器内部错误', 'code': 500}), 500
 
 
-    # 点赞帖子API
+    # 帖子点赞功能
     @app.route('/api/posts/<int:post_id>/like', methods=['POST'])
     @jwt_required()
     def like_post(post_id):
         try:
             current_user_id = get_jwt_identity()
-            app.logger.info(f'用户 {current_user_id} 尝试点赞帖子 {post_id}')
+            current_user = User.query.get(current_user_id)
+            
+            if not current_user:
+                return jsonify({'error': '用户不存在'}), 404
             
             post = Post.query.get(post_id)
             if not post:
-                app.logger.warning(f'帖子 {post_id} 不存在')
-                return jsonify({'error': '帖子不存在', 'code': 404}), 404
+                return jsonify({'error': '帖子不存在'}), 404
             
-            # 检查用户是否已经点赞过
+            # 检查用户是否已经点赞
             existing_like = Like.query.filter_by(user_id=current_user_id, post_id=post_id).first()
+            
             if existing_like:
-                app.logger.info(f'用户 {current_user_id} 已经给帖子 {post_id} 点过赞')
-                return jsonify({'success': False, 'message': '您已经点过赞了', 'likes_count': post.likes_count}), 200
+                # 用户已点赞，取消点赞
+                db.session.delete(existing_like)
+                post.likes_count = max(0, post.likes_count - 1)  # 确保点赞数不会变成负数
+                action = 'unliked'
+            else:
+                # 用户未点赞，添加点赞
+                new_like = Like(user_id=current_user_id, post_id=post_id)
+                db.session.add(new_like)
+                post.likes_count += 1
+                action = 'liked'
             
-            # 创建点赞记录
-            new_like = Like(user_id=current_user_id, post_id=post_id)
-            db.session.add(new_like)
+            db.session.commit()
             
-            # 增加点赞数
-            old_likes = post.likes_count
-            post.likes_count = post.likes_count + 1
+            app.logger.info(f'用户 {current_user_id} {action} 帖子 {post_id}')
             
-            try:
-                db.session.commit()
-                app.logger.info(f'用户 {current_user_id} 成功点赞帖子 {post_id}，点赞数从 {old_likes} 更新为 {post.likes_count}')
-                
-                return jsonify({
-                    'success': True,
-                    'message': '点赞成功',
-                    'likes_count': post.likes_count
-                })
-            except Exception as e:
-                db.session.rollback()
-                app.logger.error(f'更新帖子点赞数时出错: {str(e)}')
-                return jsonify({'error': '更新点赞数失败', 'message': str(e)}), 500
+            return jsonify({
+                'success': True,
+                'message': f'帖子{("取消点赞" if action == "unliked" else "点赞")}成功',
+                'likes': post.likes_count  # 确保返回的是实际的点赞数字段
+            })
         except Exception as e:
-            app.logger.error(f'点赞帖子时发生错误: {str(e)}')
-            return jsonify({'error': '点赞失败', 'message': str(e)}), 500
-
+            db.session.rollback()
+            app.logger.error(f'处理点赞时发生错误: {str(e)}')
+            return jsonify({'error': '处理点赞失败', 'message': str(e)}), 500
 
     # API路由 - 评论功能
     @app.route('/api/comments', methods=['GET', 'POST'])
@@ -754,8 +776,15 @@ def create_app(config_name=None):
                 
                 app.logger.info(f'用户 {current_user_id} 请求评论列表，帖子ID: {post_id}')
                 
+                # 确保评论数据包含必要的author_id字段
+                comments_data = []
+                for comment in comments:
+                    comment_dict = comment.to_dict()
+                    comment_dict['author_id'] = comment.author_id  # 确保author_id字段存在
+                    comments_data.append(comment_dict)
+                
                 return jsonify({
-                    'comments': [comment.to_dict() for comment in comments]
+                    'comments': comments_data
                 })
             
             elif request.method == 'POST':
@@ -775,10 +804,13 @@ def create_app(config_name=None):
                 
                 app.logger.info(f'用户 {current_user_id} 对帖子 {data["post_id"]} 发表了评论')
                 
+                comment_dict = comment.to_dict()
+                comment_dict['author_id'] = comment.author_id  # 确保author_id字段存在
+                
                 return jsonify({
                     'success': True,
                     'message': '评论创建成功',
-                    'comment': comment.to_dict()
+                    'comment': comment_dict
                 }), 201
         except Exception as e:
             app.logger.error(f'评论操作时发生错误: {str(e)}')
@@ -820,7 +852,37 @@ def create_app(config_name=None):
     # 管理员API路由
     @app.route('/api/admin/users', methods=['GET'])
     @jwt_required()
-    def get_all_users():
+    def get_users():
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(current_user_id)
+        
+        if not current_user or not current_user.is_admin:
+            app.logger.warning(f'用户 {current_user_id} 尝试访问管理员功能')
+            return jsonify({'error': '需要管理员权限'}), 403
+        
+        try:
+            users = User.query.all()
+            user_list = []
+            for user in users:
+                user_data = user.to_dict()
+                # 仅在管理员视图中添加敏感信息
+                user_data['registration_date'] = user.created_at.isoformat() if user.created_at else None
+                user_list.append(user_data)
+            
+            app.logger.info(f'管理员 {current_user_id} 请求了用户列表，返回 {len(user_list)} 个用户')
+            
+            return jsonify({
+                'success': True,
+                'users': user_list,
+                'total': len(user_list)
+            })
+        except Exception as e:
+            app.logger.error(f'获取用户列表时发生错误: {str(e)}')
+            return jsonify({'error': '获取用户列表失败', 'message': str(e)}), 500
+
+    @app.route('/api/admin/resources/<int:resource_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_resource(resource_id):
         current_user_id = get_jwt_identity()
         current_user = User.query.get(current_user_id)
         
@@ -828,13 +890,142 @@ def create_app(config_name=None):
             app.logger.warning(f'用户 {current_user_id} 尝试访问管理员功能')
             return jsonify({'error': '需要管理员权限'}), 403
         
-        users = User.query.all()
-        app.logger.info(f'管理员 {current_user_id} 请求了所有用户列表')
+        resource = CulturalResource.query.get(resource_id)
+        if not resource:
+            app.logger.warning(f'尝试删除不存在的文化资源: {resource_id}')
+            return jsonify({'error': '文化资源不存在'}), 404
         
-        return jsonify({
-            'users': [user.to_dict() for user in users]
-        })
+        try:
+            db.session.delete(resource)
+            db.session.commit()
+            
+            app.logger.info(f'管理员 {current_user_id} 删除了文化资源: {resource_id}')
+            
+            return jsonify({
+                'success': True,
+                'message': '文化资源删除成功'
+            })
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f'删除文化资源时发生错误: {str(e)}')
+            return jsonify({'error': '删除文化资源失败', 'message': str(e)}), 500
 
+    # 活动API路由
+    @app.route('/api/activities', methods=['GET'])
+    @jwt_required()
+    def activities():
+        try:
+            # 模拟活动数据，实际应用中可以从数据库获取
+            activities_list = [
+                {
+                    'id': '1',
+                    'title': '湖湘文化艺术节',
+                    'description': '一场集音乐、舞蹈、戏剧、美术于一体的综合性文化艺术盛宴，展示湖湘文化的独特魅力。',
+                    'imageUrl': 'https://picsum.photos/seed/artfestival/400/300',
+                    'startDate': '2024-06-15',
+                    'endDate': '2024-06-17',
+                    'location': '长沙市湖南大剧院',
+                    'participants': 500,
+                    'isJoined': False
+                },
+                {
+                    'id': '2',
+                    'title': '岳麓书院文化讲堂',
+                    'description': '邀请知名学者讲解湖湘文化的历史渊源和当代价值，欢迎广大文化爱好者参与。',
+                    'imageUrl': 'https://picsum.photos/seed/culturelecture/400/300',
+                    'startDate': '2024-07-22',
+                    'endDate': '2024-07-22',
+                    'location': '长沙市岳麓书院',
+                    'participants': 189,
+                    'isJoined': False
+                },
+                {
+                    'id': '3',
+                    'title': '湘绣技艺体验工作坊',
+                    'description': '由资深湘绣艺人亲自指导，让参与者亲身体验湘绣的制作过程，感受传统工艺的魅力。',
+                    'imageUrl': 'https://picsum.photos/seed/xiangxiu/400/300',
+                    'startDate': '2024-08-05',
+                    'endDate': '2024-08-05',
+                    'location': '湖南省博物馆',
+                    'participants': 120,
+                    'isJoined': False
+                }
+            ]
+            
+            app.logger.info(f'用户 {get_jwt_identity()} 请求了活动列表')
+            
+            return jsonify({
+                'success': True,
+                'activities': activities_list,
+                'total': len(activities_list)
+            })
+        except Exception as e:
+            app.logger.error(f'获取活动列表时发生错误: {str(e)}')
+            return jsonify({'error': '获取活动列表失败', 'message': str(e)}), 500
+
+    # 管理员修改用户角色的API
+    @app.route('/api/admin/users/<int:user_id>/role', methods=['PUT'])
+    @jwt_required()
+    def update_user_role(user_id):
+        current_user_id = get_jwt_identity()
+        current_user = User.query.get(current_user_id)
+        
+        if not current_user or not current_user.is_admin:
+            app.logger.warning(f'用户 {current_user_id} 尝试访问管理员功能')
+            return jsonify({'error': '需要管理员权限'}), 403
+        
+        target_user = User.query.get(user_id)
+        if not target_user:
+            app.logger.warning(f'尝试修改不存在的用户角色: {user_id}')
+            return jsonify({'error': '用户不存在'}), 404
+        
+        # 防止管理员修改自己的角色
+        if current_user_id == user_id:
+            app.logger.warning(f'管理员 {current_user_id} 尝试修改自己的角色')
+            return jsonify({'error': '不能修改自己的角色'}), 403
+        
+        try:
+            data = request.get_json()
+            if not data or 'is_admin' not in data:
+                return jsonify({'error': '缺少角色参数'}), 400
+            
+            is_admin = data['is_admin']
+            if not isinstance(is_admin, bool):
+                return jsonify({'error': '角色参数必须是布尔值'}), 400
+            
+            # 防止移除唯一的管理员账户
+            if not is_admin:
+                admin_count = User.query.filter_by(is_admin=True).count()
+                if admin_count == 1 and target_user.is_admin:
+                    return jsonify({'error': '不能移除唯一的管理员角色'}), 400
+            
+            target_user.is_admin = is_admin
+            db.session.commit()
+            
+            app.logger.info(f'管理员 {current_user_id} 更新了用户 {user_id} 的角色为: {"管理员" if is_admin else "普通用户"}')
+            
+            return jsonify({
+                'success': True,
+                'message': '用户角色更新成功',
+                'user': target_user.to_dict()
+            })
+        except Exception as e:
+            db.session.rollback()
+            app.logger.error(f'更新用户角色时发生错误: {str(e)}')
+            return jsonify({'error': '更新用户角色失败', 'message': str(e)}), 500
+
+    # 全局错误处理，捕获所有未处理的异常
+    @app.errorhandler(Exception)
+    def handle_exception(e):
+        # 记录异常
+        app.logger.error(f'未处理的异常: {str(e)}', exc_info=True)
+        
+        # 如果是HTTPException，交给默认处理程序
+        if hasattr(e, 'code') and e.code is not None:
+            return jsonify({'error': str(e), 'code': e.code}), e.code
+        
+        # 对于其他异常，返回JSON格式的错误信息
+        return jsonify({'error': '服务器内部错误', 'message': '服务器发生了未预期的错误'}), 500
 
     return app
 
@@ -844,6 +1035,10 @@ def setup_logging(app):
     """
     设置应用的日志配置
     """
+    if app is None:
+        print("警告：应用实例为空，无法设置日志")
+        return
+        
     # 确保logs目录存在
     if not os.path.exists('logs'):
         os.mkdir('logs')
@@ -867,46 +1062,11 @@ def setup_logging(app):
     app.logger.setLevel(logging.INFO)
     app.logger.info('胡湘文化平台启动')
 
+
 # 创建应用实例
-app = create_app()
-
-# 添加日志
-setup_logging(app)
-
-
-# 全局错误处理，捕获所有未处理的异常
-@app.errorhandler(Exception)
-def handle_exception(e):
-    # 记录异常
-    app.logger.error(f'未处理的异常: {str(e)}', exc_info=True)
-    
-    # 如果是HTTPException，交给默认处理程序
-    if hasattr(e, 'code') and e.code is not None:
-        return jsonify({'error': str(e), 'code': e.code}), e.code
-    
-    # 对于其他异常，返回JSON格式的错误信息
-    return jsonify({'error': '服务器内部错误', 'message': '服务器发生了未预期的错误'}), 500
-
-
-# 错误处理
-@app.errorhandler(404)
-def not_found(error):
-    app.logger.error(f'资源未找到: {request.url}')
-    return jsonify({'error': '资源未找到'}), 404
-
-@app.errorhandler(500)
-def internal_error(error):
-    db.session.rollback()
-    app.logger.error(f'服务器内部错误: {str(error)}')
-    return jsonify({'error': '服务器内部错误'}), 500
-
-# 运行应用
 if __name__ == '__main__':
+    app = create_app()
     with app.app_context():
         db.create_all()
+    setup_logging(app)
     app.run(debug=True, host='0.0.0.0', port=5000)
-
-# 在其他模块导入时确保创建表
-else:
-    with app.app_context():
-        db.create_all()

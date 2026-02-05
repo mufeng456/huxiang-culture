@@ -101,10 +101,10 @@
                 <p class="post-excerpt">{{ truncateText(post.content, 150) }}</p>
               </div>
               
-              <!-- 添加操作按钮，仅对帖子作者显示 -->
-              <div class="post-actions" v-if="isPostOwner(post)">
+              <!-- 帖子操作区域，分类标签对所有用户显示，编辑删除按钮只对发布者显示 -->
+              <div class="post-actions">
                 <span class="post-category">{{ post.category || '文化讨论' }}</span>
-                <div class="post-action-buttons">
+                <div class="post-action-buttons" v-if="isPostOwner(post)">
                   <button class="action-btn edit-btn" @click.stop="editPost(post.id)">
                     <i class="fas fa-edit"></i> 编辑
                   </button>

@@ -279,8 +279,16 @@ export default {
           error.value = '请先登录'
           return
         }
+
+        // 获取当前用户信息用于调试
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        console.log('当前用户信息:', currentUser);
+        console.log('当前帖子作者ID:', currentPost.value?.author_id);
+        console.log('是否为管理员:', currentUser.is_admin);
+
+        const response = await request(`/posts/${postId}`, 'DELETE')  // 这里的路径是正确的，因为request函数会自动添加/api前缀
         
-        const response = await request(`/posts/${postId}`, 'DELETE')
+        console.log('删除帖子响应:', response);
         
         if (response.success) {
           alert('帖子删除成功')
@@ -350,7 +358,7 @@ export default {
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1400px; /* 增加宽度 */
   margin: 0 auto;
   padding: 0 1rem;
 }

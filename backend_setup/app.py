@@ -592,13 +592,13 @@ def create_app(config_name=None):
             if not post:
                 app.logger.warning(f'请求的帖子不存在: {post_id}')
                 return jsonify({'error': '帖子不存在', 'code': 404}), 404
-                
+            
             current_user_id = get_jwt_identity()
             current_user_obj = User.query.get(current_user_id)
             if not current_user_obj:
                 app.logger.warning(f'认证用户不存在: {current_user_id}')
                 return jsonify({'error': '用户不存在', 'code': 404}), 404
-            
+        
             if request.method == 'GET':
                 app.logger.info(f'用户 {current_user_id} 访问了帖子: {post_id}')
                 
@@ -617,10 +617,12 @@ def create_app(config_name=None):
                     except Exception as e:
                         db.session.rollback()
                         app.logger.error(f'更新帖子浏览量时出错: {str(e)}')
-                
-                return jsonify({'post': post.to_dict()})
+
+                # 对于GET请求，返回success和post数据
+                return jsonify({'success': True, 'post': post.to_dict()})
             
             # 检查权限：只能修改/删除自己创建的帖子，或管理员可以修改任意帖子
+            # 这里只针对PUT和DELETE请求进行权限检查
             post_author_id = getattr(post, 'author_id', None)
             if post_author_id is None:
                 app.logger.error(f'帖子 {post_id} 缺少author_id字段，无法验证权限')
@@ -630,7 +632,7 @@ def create_app(config_name=None):
                 app.logger.warning(f'用户 {current_user_id} 尝试访问无权限的帖子: {post_id}')
                 return jsonify({'error': '无权访问此资源', 'code': 403}), 403
             
-            elif request.method == 'PUT':
+            if request.method == 'PUT':
                 try:
                     data = request.get_json()
                     
@@ -641,7 +643,7 @@ def create_app(config_name=None):
                         if not data['title'] or len(data['title']) > 200:
                             return jsonify({'error': '标题不能为空且不能超过200个字符', 'code': 400}), 400
                         post.title = data['title']
-                        
+                            
                     if 'content' in data:
                         if not data['content'] or len(data['content']) > 5000:
                             return jsonify({'error': '内容不能为空且不能超过5000个字符', 'code': 400}), 400
@@ -651,10 +653,10 @@ def create_app(config_name=None):
                         if not data['category']:
                             return jsonify({'error': '分类不能为空', 'code': 400}), 400
                         post.category = data['category']
-                    
+                        
                     db.session.commit()
                     app.logger.info(f'用户 {current_user_id} 更新了帖子: {post_id}')
-                    
+                        
                     return jsonify({
                         'success': True,
                         'message': '帖子更新成功',
@@ -664,13 +666,13 @@ def create_app(config_name=None):
                     db.session.rollback()
                     app.logger.error(f'更新帖子时发生错误: {str(e)}')
                     return jsonify({'error': '更新帖子失败', 'message': str(e), 'code': 500}), 500
-            
+                
             elif request.method == 'DELETE':
                 try:
                     db.session.delete(post)
                     db.session.commit()
                     app.logger.info(f'用户 {current_user_id} 删除了帖子: {post_id}')
-                    
+                        
                     return jsonify({
                         'success': True,
                         'message': '帖子删除成功'
@@ -679,13 +681,13 @@ def create_app(config_name=None):
                     db.session.rollback()
                     app.logger.error(f'删除帖子时发生错误: {str(e)}')
                     return jsonify({'error': '删除帖子失败', 'message': str(e), 'code': 500}), 500
-                    
-        except ValueError as e:
-            app.logger.error(f'参数转换错误: {str(e)}')
-            return jsonify({'error': '参数错误', 'message': str(e), 'code': 400}), 400
+            
+            # 如果请求方法不是GET、PUT或DELETE
+            return jsonify({'error': '不支持的请求方法', 'code': 405}), 405
+            
         except Exception as e:
-            app.logger.error(f'处理帖子详情请求时发生未知错误: {str(e)}', exc_info=True)
-            return jsonify({'error': '服务器内部错误', 'message': '服务器发生了未预期的错误', 'code': 500}), 500
+            app.logger.error(f'处理帖子详情请求时发生错误: {str(e)}')
+            return jsonify({'error': '服务器内部错误', 'code': 500}), 500
 
 
     # 点赞帖子API
@@ -780,6 +782,38 @@ def create_app(config_name=None):
                 }), 201
         except Exception as e:
             app.logger.error(f'评论操作时发生错误: {str(e)}')
+            return jsonify({'error': '服务器内部错误', 'message': str(e)}), 500
+    
+    # 删除评论的API
+    @app.route('/api/comments/<int:comment_id>', methods=['DELETE'])
+    @jwt_required()
+    def delete_comment(comment_id):
+        try:
+            current_user_id = get_jwt_identity()
+            
+            comment = Comment.query.get(comment_id)
+            if not comment:
+                app.logger.warning(f'请求的评论不存在: {comment_id}')
+                return jsonify({'error': '评论不存在', 'code': 404}), 404
+            
+            # 检查权限：只能删除自己创建的评论，或管理员可以删除任意评论
+            if comment.author_id != current_user_id:
+                current_user = User.query.get(current_user_id)
+                if not current_user or not current_user.is_admin:
+                    app.logger.warning(f'用户 {current_user_id} 尝试删除不属于他的评论: {comment_id}')
+                    return jsonify({'error': '无权删除此评论', 'code': 403}), 403
+            
+            db.session.delete(comment)
+            db.session.commit()
+            
+            app.logger.info(f'用户 {current_user_id} 删除了评论: {comment_id}')
+            
+            return jsonify({
+                'success': True,
+                'message': '评论删除成功'
+            })
+        except Exception as e:
+            app.logger.error(f'删除评论时发生错误: {str(e)}')
             return jsonify({'error': '服务器内部错误', 'message': str(e)}), 500
 
 

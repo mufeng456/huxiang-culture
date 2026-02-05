@@ -97,21 +97,21 @@
                 </div>
               </div>
               <div class="post-body">
-                <div class="post-tags">
-                  <span class="post-category">{{ post.category || '文化讨论' }}</span>
-                </div>
                 <h3 class="post-title">{{ post.title }}</h3>
                 <p class="post-excerpt">{{ truncateText(post.content, 150) }}</p>
               </div>
               
               <!-- 添加操作按钮，仅对帖子作者显示 -->
               <div class="post-actions" v-if="isPostOwner(post)">
-                <button class="action-btn edit-btn" @click.stop="editPost(post.id)">
-                  <i class="fas fa-edit"></i> 编辑
-                </button>
-                <button class="action-btn delete-btn" @click.stop="confirmDeletePost(post.id, post.title)">
-                  <i class="fas fa-trash"></i> 删除
-                </button>
+                <span class="post-category">{{ post.category || '文化讨论' }}</span>
+                <div class="post-action-buttons">
+                  <button class="action-btn edit-btn" @click.stop="editPost(post.id)">
+                    <i class="fas fa-edit"></i> 编辑
+                  </button>
+                  <button class="action-btn delete-btn" @click.stop="confirmDeletePost(post.id, post.title)">
+                    <i class="fas fa-trash"></i> 删除
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -183,20 +183,20 @@
                 </div>
               </div>
               <div class="post-body">
-                <div class="post-tags">
-                  <span class="post-category">{{ post.category || '文化讨论' }}</span>
-                </div>
                 <h3 class="post-title">{{ post.title }}</h3>
                 <p class="post-excerpt">{{ truncateText(post.content, 150) }}</p>
               </div>
               <!-- 我的帖子操作按钮 -->
               <div class="post-actions">
-                <button class="action-btn edit-btn" @click.stop="editMyPost(post.id)">
-                  <i class="fas fa-edit"></i> 编辑
-                </button>
-                <button class="action-btn delete-btn" @click.stop="deleteMyPost(post.id, post.title)">
-                  <i class="fas fa-trash"></i> 删除
-                </button>
+                <span class="post-category">{{ post.category || '文化讨论' }}</span>
+                <div class="post-action-buttons">
+                  <button class="action-btn edit-btn" @click.stop="editMyPost(post.id)">
+                    <i class="fas fa-edit"></i> 编辑
+                  </button>
+                  <button class="action-btn delete-btn" @click.stop="deleteMyPost(post.id, post.title)">
+                    <i class="fas fa-trash"></i> 删除
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1151,11 +1151,37 @@ export default {
 
 .post-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
+  justify-content: space-between;
+  align-items: center;
   margin-top: 1rem;
-  padding-top: 1rem;
+  padding: 0.5rem;
   border-top: 1px solid #eee;
+  width: 100%;
+}
+
+.post-category {
+  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-block;
+  box-shadow: 0 2px 8px rgba(106, 17, 203, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+  align-self: center; /* 与按钮垂直居中对齐 */
+}
+
+.post-category:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(106, 17, 203, 0.6);
+}
+
+.post-action-buttons {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .action-btn {
@@ -1446,5 +1472,41 @@ export default {
     padding: 0.25rem 0.75rem;
     font-size: 0.9rem;
   }
+}
+
+/* 分类标签样式优化 */
+.post-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 1rem;
+  padding: 0.5rem;
+  border-top: 1px solid #eee;
+  width: 100%;
+}
+
+.post-category {
+  background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-block;
+  box-shadow: 0 2px 8px rgba(106, 17, 203, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+  align-self: center; /* 与按钮垂直居中对齐 */
+}
+
+.post-category:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(106, 17, 203, 0.6);
+}
+
+.post-action-buttons {
+  display: flex;
+  gap: 0.5rem;
 }
 </style>

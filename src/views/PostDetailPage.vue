@@ -23,7 +23,10 @@
           <div class="post-stats">
             <span class="stat-item"><i class="far fa-eye"></i> {{ currentPost?.views || 0 }} 浏览</span>
             <span class="stat-item"><i class="far fa-comment"></i> <i class="comment-count-loading" v-if="commentsLoading">加载中...</i><span class="comment-count" v-else>{{ commentCount }}</span></span>
-            <span class="stat-item"><i class="far fa-thumbs-up"></i> {{ currentPost?.likes_count || 0 }} 点赞</span>
+            <button @click="toggleLike" class="like-btn" :class="{ liked: isLiked }">
+              <i class="far fa-thumbs-up" :class="{ 'fas': isLiked }"></i>
+              <span>{{ currentPost?.likes_count || 0 }} 点赞</span>
+            </button>
           </div>
         </div>
         
@@ -33,14 +36,6 @@
             <span class="post-category">{{ currentPost?.category || '文化讨论' }}</span>
           </div>
           <h1 class="post-title">{{ currentPost?.title }}</h1>
-          <div class="post-stats-detail">
-            <span class="stat-item"><i class="far fa-eye"></i> {{ currentPost?.views || 0 }} 浏览</span>
-            <span class="stat-item"><i class="far fa-comment"></i> <i class="comment-count-loading" v-if="commentsLoading">加载中...</i><span class="comment-count" v-else>{{ commentCount }}</span></span>
-            <button @click="toggleLike" class="like-btn" :class="{ liked: isLiked }">
-              <i class="far fa-thumbs-up" :class="{ 'fas': isLiked }"></i>
-              <span>{{ currentPost?.likes_count || 0 }} 点赞</span>
-            </button>
-          </div>
           <div class="post-body" v-html="formatPostContent(currentPost?.content)"></div>
           <div class="post-actions" v-if="canEditDelete">
             <button class="action-btn" @click="editPost">
@@ -355,7 +350,7 @@ export default {
 }
 
 .container {
-  max-width: 800px;
+  max-width: 1200px;
   margin: 0 auto;
   padding: 0 1rem;
 }
@@ -542,11 +537,20 @@ export default {
 .post-category {
   background: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
   color: white;
-  padding: 0.25rem 0.75rem;
-  border-radius: 15px;
-  font-size: 0.8rem;
-  font-weight: 500;
+  padding: 0.4rem 1rem;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
   display: inline-block;
+  box-shadow: 0 2px 8px rgba(106, 17, 203, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  transition: all 0.3s ease;
+}
+
+.post-category:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(106, 17, 203, 0.6);
 }
 
 .empty-state {
